@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, symlink } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { checkPlugin } from '../src/check-plugin.mjs';
+import { checkPlugin, resolveMarketplaceManifestPath } from '../src/check-plugin.mjs';
 
 const fixtureRoot = fileURLToPath(new URL('./fixtures/marketplace', import.meta.url));
 const pluginRoot = path.join(fixtureRoot, 'plugins', 'sample');
@@ -215,6 +215,69 @@ test('canonicalizes a symlink marketplace root across every Codex boundary', asy
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });
   }
+});
+
+test('resolves the marketplace manifest Codex accepted without assuming an agents layout', async () => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), 'codex-plugin-check-manifest-'));
+  const claudeDirectory = path.join(temporaryRoot, '.claude-plugin');
+  const agentsDirectory = path.join(temporaryRoot, '.agents', 'plugins');
+  const claudeManifest = path.join(claudeDirectory, 'marketplace.json');
+  await mkdir(claudeDirectory, { recursive: true });
+  await mkdir(agentsDirectory, { recursive: true });
+  await writeFile(
+    path.join(agentsDirectory, 'marketplace.json'),
+    '{"name":"different-marketplace","plugins":[]}\n'
+  );
+  await writeFile(
+    claudeManifest,
+    '{"name":"local-marketplace","plugins":[]}\n'
+  );
+  try {
+    assert.equal(
+      await resolveMarketplaceManifestPath(temporaryRoot, 'local-marketplace'),
+      await realpath(claudeManifest)
+    );
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
+test('rejects a matching marketplace manifest symlink that escapes the checkout', async () => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), 'codex-plugin-check-manifest-'));
+  const outsideRoot = await mkdtemp(path.join(os.tmpdir(), 'codex-plugin-check-outside-'));
+  const outsideManifest = path.join(outsideRoot, 'marketplace.json');
+  const agentsDirectory = path.join(temporaryRoot, '.agents', 'plugins');
+  await mkdir(agentsDirectory, { recursive: true });
+  await writeFile(outsideManifest, '{"name":"local-marketplace","plugins":[]}\n');
+  await symlink(outsideManifest, path.join(agentsDirectory, 'marketplace.json'));
+  try {
+    await assert.rejects(
+      resolveMarketplaceManifestPath(temporaryRoot, 'local-marketplace'),
+      /escaped the marketplace root/
+    );
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+    await rm(outsideRoot, { recursive: true, force: true });
+  }
+});
+
+test('requests plugin evidence from the resolved marketplace manifest', async () => {
+  const claudeManifest = path.join(fixtureRoot, '.claude-plugin', 'marketplace.json');
+  const responses = successfulResponses();
+  responses.plugin.plugin.marketplacePath = claudeManifest;
+  const observed = harness({ plugin: responses.plugin });
+  observed.dependencies.resolveMarketplaceManifestPath = async (root, name) => {
+    assert.equal(root, fixtureRoot);
+    assert.equal(name, 'local-marketplace');
+    return claudeManifest;
+  };
+
+  await checkPlugin(options, observed.dependencies);
+
+  assert.deepEqual(observed.requests[0], [
+    'plugin/read',
+    { pluginName: 'sample', marketplacePath: claudeManifest }
+  ]);
 });
 
 test('rejects install JSON that lacks Codex-owned install evidence', async () => {
