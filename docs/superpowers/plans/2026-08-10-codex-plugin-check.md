@@ -34,7 +34,7 @@
 - Produces: `exitCodeForStatus(status) -> 0|1|2|3|4`
 - Consumes: plain JSON objects only; no filesystem or process access.
 
-- [ ] **Step 1: Create the package test command and write the failing receipt tests**
+- [x] **Step 1: Create the package test command and write the failing receipt tests**
 
 ```js
 import test from 'node:test';
@@ -72,12 +72,12 @@ test('maps stable run statuses to exit codes', () => {
 });
 ```
 
-- [ ] **Step 2: Run the focused test and record the expected module-not-found failure**
+- [x] **Step 2: Run the focused test and record the expected module-not-found failure**
 
 Run: `node --test test/receipt.test.mjs`  
 Expected: FAIL because `src/receipt.mjs` does not exist.
 
-- [ ] **Step 3: Implement only the deterministic comparison and exit-code behavior**
+- [x] **Step 3: Implement only the deterministic comparison and exit-code behavior**
 
 Implement normalization for `skills`, `hooks`, `mcpServers`, and `apps`; match
 skills by `name`, hooks by `key`, apps by `id`, and MCP servers by string key.
@@ -86,12 +86,12 @@ Sort results by `kind` then `key`. Missing skill/hook discovery makes the run
 own capability status; declaration-only MCP/app records do not claim runtime
 behavior.
 
-- [ ] **Step 4: Run the focused test, then the whole suite**
+- [x] **Step 4: Run the focused test, then the whole suite**
 
 Run: `node --test test/receipt.test.mjs && npm test`  
 Expected: all tests pass with zero warnings.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add package.json src/receipt.mjs test/receipt.test.mjs
@@ -113,7 +113,7 @@ git commit -m "feat: add deterministic conformance receipts"
 - Rejects duplicate response IDs, malformed JSONL, JSON-RPC errors, timeouts,
   premature exit, and stderr larger than 64 KiB.
 
-- [ ] **Step 1: Write a fake real subprocess and failing protocol tests**
+- [x] **Step 1: Write a fake real subprocess and failing protocol tests**
 
 The fake server reads JSON lines from stdin, returns an initialize result with
 `codexHome`, `platformFamily`, `platformOs`, and `userAgent`, returns fixture
@@ -136,24 +136,24 @@ assert.equal(result.plugin.summary.name, 'sample');
 await client.close();
 ```
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `node --test test/app-server-client.test.mjs`  
 Expected: FAIL because `AppServerClient` is not implemented.
 
-- [ ] **Step 3: Implement the minimal line-buffered client**
+- [x] **Step 3: Implement the minimal line-buffered client**
 
 Use `node:child_process.spawn` and `node:readline`. Maintain a monotonic integer
 ID, a map of pending requests, one timeout per request, a bounded stderr buffer,
 and one idempotent shutdown path. Never interpret notifications as responses.
 
-- [ ] **Step 4: Verify GREEN and error branches**
+- [x] **Step 4: Verify GREEN and error branches**
 
 Run: `node --test test/app-server-client.test.mjs && npm test`  
 Expected: happy path, malformed line, RPC error, timeout, and premature-exit
 tests all pass without leaked child processes.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/app-server-client.mjs test/fixtures/fake-app-server.mjs test/app-server-client.test.mjs
@@ -183,7 +183,7 @@ git commit -m "feat: add bounded app server client"
 - `env` contains only the platform essentials plus explicit isolated path
   variables; all variable names matching credential deny patterns are absent.
 
-- [ ] **Step 1: Write failing environment and container-command tests**
+- [x] **Step 1: Write failing environment and container-command tests**
 
 Use a synthetic parent environment containing `OPENAI_API_KEY`, `GH_TOKEN`,
 `NPM_TOKEN`, `SSH_AUTH_SOCK`, `HTTPS_PROXY`, and a harmless `PATH`. Assert the
@@ -197,12 +197,12 @@ arguments use an exact numeric Codex version and reject `latest`, ranges, shell
 metacharacters, and prerelease strings. Strict mode on non-Linux platforms or
 without Docker must fail closed.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `node --test test/isolation.test.mjs`  
 Expected: FAIL because `src/isolation.mjs` does not exist.
 
-- [ ] **Step 3: Implement the smallest strict-isolation context**
+- [x] **Step 3: Implement the smallest strict-isolation context**
 
 Hash every regular file and symlink target under the checkout before the run
 with SHA-256; ignore `.git` metadata only. Generate paths with
@@ -210,7 +210,7 @@ with SHA-256; ignore `.git` metadata only. Generate paths with
 resolve the owned root and refuse any path not beginning with that exact
 canonical prefix.
 
-- [ ] **Step 4: Verify GREEN, then run a real sandbox denial characterization**
+- [x] **Step 4: Verify GREEN; defer the real denial characterization to Task 6 CI**
 
 Run: `node --test test/isolation.test.mjs`  
 Then, on Linux CI, run a test container that can read its owned canary but
@@ -218,7 +218,7 @@ cannot see a host-home canary, cannot write the checkout, and cannot reach a
 loopback listener. Expected: both automated and characterization tests pass;
 denial is observable.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Dockerfile src/isolation.mjs test/isolation.test.mjs
@@ -239,48 +239,58 @@ git commit -m "feat: isolate codex probe state"
 - Produces: `checkPlugin(options, dependencies) -> Promise<Receipt>`.
 - Dependency boundary accepts `runCommand`, `startAppServer`, and
   `createIsolation`; production defaults use the real implementations.
-- CLI sequence is exactly marketplace add, plugin add `--json`, plugin list
-  `--json`, then app-server requests.
+- CLI sequence is exactly marketplace add `--json`, plugin add with the
+  returned `--marketplace` name and `--json`, plugin list `--json`, then
+  app-server requests.
 
-- [ ] **Step 1: Write failing orchestration tests with behavior-level fakes**
+- [x] **Step 1: Write failing orchestration tests with behavior-level fakes**
 
 Assert the exact command sequence and that the three app-server requests use:
 
 ```js
 [
-  ['plugin/read', { pluginName: 'sample', marketplacePath: fixtureRoot }],
+  ['plugin/read', {
+    pluginName: 'sample',
+    marketplacePath: path.join(fixtureRoot, '.agents/plugins/marketplace.json')
+  }],
   ['skills/list', { cwds: [fixtureRoot], forceReload: true }],
   ['hooks/list', { cwds: [fixtureRoot] }]
 ]
 ```
 
-Add tests for failed install JSON, a source mismatch, a missing declared skill,
-an untrusted hook, and app/MCP declarations that remain `DECLARED_ONLY`.
+Add tests for failed marketplace/install JSON; mismatched CLI and
+`plugin/read` identity, enablement, source, and marketplace path; an unrelated
+same-named skill; a missing declared skill; an untrusted hook; and app/MCP
+declarations that remain `DECLARED_ONLY`. Capture commands and requests in one
+ordered event log so the CLI-to-app-server boundary order is asserted.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `node --test test/check-plugin.test.mjs`  
 Expected: FAIL because `checkPlugin` is absent.
 
-- [ ] **Step 3: Implement minimal orchestration**
+- [x] **Step 3: Implement minimal orchestration**
 
 Do not parse the plugin manifest as product truth. Validate only Codex CLI JSON
-and Codex app-server responses. Normalize effective skills from every
-`SkillsListResponse.data[].skills` item and hooks from every
-`HooksListResponse.data[].hooks` item whose `source` is `plugin` and whose
-`pluginId` or source path identifies the installed plugin.
+and Codex app-server responses. The fixed local marketplace manifest path is
+used only as the address required by `plugin/read`. Normalize effective skills
+from every `SkillsListResponse.data[].skills` item and hooks from every
+`HooksListResponse.data[].hooks` item, but admit only entries whose paths are
+inside the installed plugin cache; hooks must additionally identify the plugin
+through Codex's plugin source metadata. Fixture hook event names use Codex's
+case-sensitive schema, for example `SessionStart`.
 
 `checkPlugin` is the internal single-process pipeline. It uses direct child
 commands plus environment isolation and does not create a strict container per
 subcommand. The CLI/Action adapter in Task 5 invokes this complete pipeline once
 inside `IsolationContext.wrap(...)` when strict mode is selected.
 
-- [ ] **Step 4: Verify GREEN and checkout integrity**
+- [x] **Step 4: Verify GREEN and checkout integrity**
 
 Run: `node --test test/check-plugin.test.mjs && npm test`  
 Expected: all branches pass and the fixture checkout hash is unchanged.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/check-plugin.mjs test/fixtures/marketplace test/check-plugin.test.mjs
@@ -304,16 +314,24 @@ git commit -m "feat: check codex plugin discovery"
   output directly without `@actions/core`.
 - Action outputs: `status`, `receipt`, and `codex-version`.
 - Strict outer mode creates one container context, invokes the CLI once with an
-  internal env-only marker and container paths (`/workspace`, `/output`,
-  `/usr/local/bin/codex`), copies the staged receipt to the caller destination,
-  verifies checkout integrity, and cleans the owned context. The internal
-  marker is rejected unless the strict wrapper sets its private sentinel.
+  inner environment-mode invocation and container paths (`/workspace`,
+  `/output`, `/tool`, `/usr/local/bin/codex`), then verifies the child exit code
+  agrees with the staged receipt. Only the outer process that constructed the
+  strict Docker invocation may replace the staged receipt's `not_enforced`
+  fields with `strict`/`denied`; a direct environment-mode invocation can never
+  claim strict isolation. The outer process verifies checkout integrity,
+  cleans owned state, and only then writes the certified receipt to the caller
+  destination.
 
 - [ ] **Step 1: Write failing CLI and Action adapter tests**
 
 CLI tests cover `--help`, missing required input, unknown flags, stable exit
-codes, JSON receipt writing, and a one-screen summary. Action tests use a real
-temporary `GITHUB_OUTPUT` file and assert multiline-safe output formatting.
+codes, JSON receipt writing, a one-screen summary, and the strict outer/inner
+boundary. The strict test must prove that the inner call receives `--isolation
+env`, that a direct env call cannot emit strict claims, that receipt status and
+child exit code must agree, and that every finalizer runs on failure. Action
+tests use a real temporary `GITHUB_OUTPUT` file and assert multiline-safe output
+formatting.
 
 - [ ] **Step 2: Verify RED**
 
@@ -323,8 +341,9 @@ Expected: FAIL because both adapters are absent.
 - [ ] **Step 3: Implement thin adapters**
 
 Keep parsing and GitHub output formatting local to the adapters; all checking
-continues through `checkPlugin`. `action.yml` uses `runs.using: node24` and
-`runs.main: src/action.mjs`.
+continues through `checkPlugin`. Strict certification is an adapter concern,
+not a hidden option accepted by `checkPlugin`. `action.yml` uses `runs.using:
+node24` and `runs.main: src/action.mjs`.
 
 - [ ] **Step 4: Verify GREEN**
 

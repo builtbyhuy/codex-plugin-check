@@ -59,14 +59,22 @@ certified isolation `PASS`.
 4. In strict mode, start one network-denied container for the complete probe;
    do not start one ephemeral container per Codex command because install state
    must persist through discovery. Inside that boundary, add the local
-   marketplace and install the named plugin with the released
-   Codex binary. Verify the CLI's JSON says the plugin is installed from the
-   requested local marketplace.
+   marketplace with `--json`, use the returned marketplace name to install the
+   named plugin with `--marketplace <name> --json`, then query `plugin list
+   --json`. Verify the three Codex-owned responses agree on plugin identity,
+   installed/enabled state, source checkout, marketplace root, and installed
+   cache path.
 5. Start `codex app-server --stdio --disable remote_plugin` inside the isolated
    environment. Send `initialize` with `experimentalApi: true`, then send the
    `initialized` notification.
-6. Request `plugin/read`, `skills/list` with `forceReload: true`, and
-   `hooks/list`. Do not call `app/list`: the released implementation uses an
+6. Request `plugin/read` with the absolute
+   `<marketplace-root>/.agents/plugins/marketplace.json` path. Request
+   `skills/list` with `forceReload: true` and `hooks/list`, using the
+   marketplace root as the `cwds` entry for both. Reject a `plugin/read`
+   response whose identity, marketplace path, local source, installed state,
+   or enabled state does not match the CLI evidence. Only effective skill and
+   hook entries whose paths are inside the installed plugin cache may satisfy
+   a declaration. Do not call `app/list`: the released implementation uses an
    auth/network-backed connector directory. Do not call MCP status APIs: they
    initialize effective MCP servers.
 7. Treat `plugin/read` as Codex-owned declaration evidence. Treat
@@ -76,6 +84,13 @@ certified isolation `PASS`.
    authenticating the capability.
 8. Emit one deterministic JSON receipt and a short human summary. Shut down the
    app server and remove only the owned temporary root.
+
+In strict mode, the outer CLI process constructs the Docker boundary and runs
+the complete inner pipeline once with environment-mode receipt fields. It
+accepts the staged receipt only when its status agrees with the child exit
+code. After checkout-integrity and cleanup checks pass, the outer process
+changes only the isolation fields to `strict`/`denied` and writes the final
+receipt. No direct environment-mode invocation can certify itself as strict.
 
 ## Result vocabulary
 
