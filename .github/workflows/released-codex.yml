@@ -42,9 +42,6 @@ jobs:
         with:
           node-version: 24.19.0
 
-      - name: Prepare deterministic evidence directory
-        run: install -d -m 0700 artifacts/released-codex
-
       - name: Falsify exact released Codex discovery
         run: npm run falsify
 

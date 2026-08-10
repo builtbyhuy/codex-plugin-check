@@ -122,3 +122,22 @@ test('strict released falsifier runs only from trusted main pushes or manual dis
     3
   );
 });
+
+test('strict workflow lets the falsifier exclusively create its evidence directory', async () => {
+  const source = await workflow('released-codex.yml');
+  const workflowSteps = steps(source);
+  const falsifierIndex = workflowSteps.findIndex((step) => (
+    step.source.includes('        run: npm run falsify')
+  ));
+
+  assert.notEqual(falsifierIndex, -1);
+  assert.deepEqual(
+    workflowSteps
+      .slice(0, falsifierIndex)
+      .filter((step) => step.source.some((line) => (
+        line.includes('artifacts/released-codex')
+      )))
+      .map((step) => step.name),
+    []
+  );
+});
