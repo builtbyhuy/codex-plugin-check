@@ -1,0 +1,53 @@
+name: Feature or compatibility request
+description: Propose a bounded checker job backed by a real plugin workflow or recurring workaround.
+title: "[request] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This project accepts evidence-backed requests. A request is not an endorsement, roadmap commitment, or compatibility result.
+
+  - type: textarea
+    id: recurring-job
+    attributes:
+      label: Recurring job or failure
+      description: What must a plugin maintainer repeatedly prove, and when does the current process fail?
+    validations:
+      required: true
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Current workaround and cost
+      description: Describe the concrete manual steps, frequency, and failure risk.
+    validations:
+      required: true
+
+  - type: input
+    id: public-example
+    attributes:
+      label: Public plugin or workflow example
+      description: Link a public repository, workflow, or minimal synthetic fixture.
+      placeholder: https://github.com/owner/repository
+    validations:
+      required: true
+
+  - type: textarea
+    id: observable-result
+    attributes:
+      label: Observable acceptance check
+      description: State the exact receipt field, released-Codex response, or CI behavior that would prove the request works.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: boundaries
+    attributes:
+      label: Safety boundaries
+      options:
+        - label: The request does not require model calls, credentials, private source, or executing third-party plugin code.
+          required: true
+        - label: I understand that a local PASS is not adoption, security certification, or production readiness.
+          required: true
