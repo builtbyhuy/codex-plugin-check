@@ -6,9 +6,9 @@ produces a deterministic JSON receipt from Codex-owned install, declaration,
 skill-registry, and hook-registry responses.
 
 This repository is in pre-release validation. The current project decision is
-**HOLD**: the bounded synthetic falsifier is implemented, strict Linux evidence
-has not yet been observed in CI, and the ten-public-fixture gate is **UNRUN
-(0/10)**. There is no adoption or production-readiness claim.
+**HOLD**: the bounded synthetic falsifier has passed private strict Linux CI,
+but the ten-public-fixture gate is **UNRUN (0/10)**. There is no adoption or
+production-readiness claim.
 
 ## What the receipt proves
 
@@ -144,7 +144,7 @@ It runs positive and deliberately disabled-skill lanes for both versions and
 writes an evidence ledger. Even after that bounded check passes, its summary
 remains `HOLD` while the separate public-fixture matrix is `UNRUN (0/10)`.
 See [`docs/evidence/technical-falsifier.md`](docs/evidence/technical-falsifier.md)
-for the observed/unobserved boundary.
+for the observed strict boundary and the remaining public-fixture hold.
 
 ## Development
 

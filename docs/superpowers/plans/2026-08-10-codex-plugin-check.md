@@ -395,7 +395,7 @@ with no user-state modification.
 Do not loosen isolation or convert missing effective evidence into a pass. Record
 version-specific API differences in the evidence document.
 
-- [ ] **Step 4: Verify GREEN and hard gates**
+- [x] **Step 4: Verify GREEN and hard gates**
 
 Run with both prepared binaries:
 
@@ -431,26 +431,26 @@ git commit -m "test: falsify released codex discovery"
 - README copy never claims runtime behavior for MCP/apps or adoption that has
   not been observed.
 
-- [ ] **Step 1: Write schema and documentation acceptance checks**
+- [x] **Step 1: Write schema and documentation acceptance checks**
 
 Add a test that validates a real receipt against the checked-in schema using a
 small project-owned validator for the schema subset in use. Add a test that
 runs the README copy-paste CLI example against the synthetic fixture with the
 fake app server boundary; do not grep prose text.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `node --test test/receipt-schema.test.mjs test/readme-example.test.mjs`  
 Expected: FAIL because schema and documented example are not yet present.
 
-- [ ] **Step 3: Add minimal release documentation and workflows**
+- [x] **Step 3: Add minimal release documentation and workflows**
 
 Use MIT license. State Linux-only strict Action support, experimental Codex
 plugin APIs, exact no-execution boundary, receipt statuses, version matrix,
 and known `DECLARED_ONLY` MCP/app limitation. Workflows pin third-party actions
 to full commit SHAs.
 
-- [ ] **Step 4: Verify locally, then in a private remote**
+- [x] **Step 4: Verify locally, then in a private remote**
 
 Run: `npm test && npm run falsify && git diff --check`  
 Create `builtbyhuy/codex-plugin-check` privately, push the feature branch, and
@@ -464,7 +464,7 @@ Merge reviewed commits to `main`, change repository visibility to public, tag
 receipt. Record repository URL, tag SHA, workflow URLs, and artifact URLs in
 `docs/evidence/technical-falsifier.md`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add .github README.md LICENSE SECURITY.md CONTRIBUTING.md docs/receipt.schema.json test
