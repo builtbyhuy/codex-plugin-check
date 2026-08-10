@@ -1,71 +1,18 @@
-const EXIT_CODES = Object.freeze({
-  PASS: 0,
-  FAIL: 1,
-  TOOL_ERROR: 2,
-  INCONCLUSIVE: 3,
-  ISOLATION_VIOLATION: 4
-});
-
-const CAPABILITY_SOURCES = Object.freeze([
-  ['skill', 'skills'],
-  ['hook', 'hooks'],
-  ['mcp', 'mcpServers'],
-  ['app', 'apps']
-]);
-
-const EVIDENCE_SOURCES = Object.freeze({
-  skill: 'plugin/read + skills/list',
-  hook: 'plugin/read + hooks/list',
-  mcp: 'plugin/read',
-  app: 'plugin/read'
-});
-
-function keyFor(kind, item) {
-  if (kind === 'mcp') return item;
-  if (kind === 'app') return item.id;
-  if (kind === 'hook') return item.key;
-  return item.name;
-}
-
-function compareCapabilities(left, right) {
-  if (left.kind !== right.kind) return left.kind < right.kind ? -1 : 1;
-  if (left.key === right.key) return 0;
-  return left.key < right.key ? -1 : 1;
-}
-
-export function evaluateCapability({ kind, key, declaration, effectiveMatch }) {
-  if (kind === 'mcp' || kind === 'app') {
-    return { kind, key, source: EVIDENCE_SOURCES[kind], status: 'DECLARED_ONLY' };
-  }
-
-  if (effectiveMatch === null) {
-    return { kind, key, source: EVIDENCE_SOURCES[kind], status: 'UNOBSERVABLE' };
-  }
-
-  if (effectiveMatch === undefined) {
-    return { kind, key, source: EVIDENCE_SOURCES[kind], status: 'MISSING' };
-  }
-
-  return {
-    kind,
-    key,
-    source: EVIDENCE_SOURCES[kind],
-    status: kind === 'hook' && effectiveMatch.trustStatus === 'untrusted'
-      ? 'DISCOVERED_UNTRUSTED'
-      : 'DISCOVERED_EFFECTIVE'
-  };
-}
-
 export function buildReceipt({ codexVersion, platform, plugin, declarations = {}, effective = {}, isolation }) {
-  const capabilities = CAPABILITY_SOURCES.flatMap(([kind, source]) => {
-    const effectiveCollection = effective?.[source];
+  const definitions = [
+    ['skill', 'skills', (item) => item.name],
+    ['hook', 'hooks', (item) => item.key],
+    ['mcp', 'mcpServers', (item) => item],
+    ['app', 'apps', (item) => item.id]
+  ];
+  const capabilities = definitions.flatMap(([kind, collection, selectKey]) => {
+    const effectiveCollection = effective?.[collection];
     const registryObserved = effectiveCollection !== undefined && effectiveCollection !== null;
     const effectiveByKey = new Map(
-      (effectiveCollection ?? []).map((item) => [keyFor(kind, item), item])
+      (effectiveCollection ?? []).map((item) => [selectKey(item), item])
     );
-
-    return (declarations[source] ?? []).map((declaration) => {
-      const key = keyFor(kind, declaration);
+    return (declarations[collection] ?? []).map((declaration) => {
+      const key = selectKey(declaration);
       return evaluateCapability({
         kind,
         key,
@@ -73,30 +20,79 @@ export function buildReceipt({ codexVersion, platform, plugin, declarations = {}
         effectiveMatch: registryObserved ? effectiveByKey.get(key) : null
       });
     });
-  }).sort(compareCapabilities);
-
-  const hasMissingRuntimeCapability = capabilities.some(({ kind, status }) => (
-    (kind === 'skill' || kind === 'hook') && status === 'MISSING'
-  ));
-  const hasUnobservableRuntimeCapability = capabilities.some(({ kind, status }) => (
-    (kind === 'skill' || kind === 'hook') && status === 'UNOBSERVABLE'
-  ));
+  }).sort((left, right) => {
+    if (left.kind !== right.kind) return left.kind < right.kind ? -1 : 1;
+    if (left.key === right.key) return 0;
+    return left.key < right.key ? -1 : 1;
+  });
+  const hasMissing = capabilities.some(({ status }) => status === 'MISSING');
+  const hasUnobservable = capabilities.some(({ status }) => status === 'UNOBSERVABLE');
 
   return {
     schemaVersion: '0.1.0',
+    status: hasMissing ? 'FAIL' : hasUnobservable ? 'INCONCLUSIVE' : 'PASS',
     codexVersion,
     platform,
     plugin,
-    isolation,
     capabilities,
-    status: hasMissingRuntimeCapability
-      ? 'FAIL'
-      : hasUnobservableRuntimeCapability
-        ? 'INCONCLUSIVE'
-        : 'PASS'
+    isolation
   };
 }
 
+export function evaluateCapability({ kind, key, effectiveMatch }) {
+  if (kind === 'mcp' || kind === 'app') {
+    return { kind, key, source: 'plugin/read', status: 'DECLARED_ONLY' };
+  }
+
+  if (kind === 'skill' && effectiveMatch != null) {
+    return {
+      kind,
+      key,
+      source: 'plugin/read + skills/list',
+      status: 'DISCOVERED_EFFECTIVE'
+    };
+  }
+
+  if (kind === 'hook' && effectiveMatch?.trustStatus === 'untrusted') {
+    return {
+      kind,
+      key,
+      source: 'plugin/read + hooks/list',
+      status: 'DISCOVERED_UNTRUSTED'
+    };
+  }
+
+  if (kind === 'hook' && effectiveMatch != null) {
+    return {
+      kind,
+      key,
+      source: 'plugin/read + hooks/list',
+      status: 'DISCOVERED_EFFECTIVE'
+    };
+  }
+
+  if ((kind === 'skill' || kind === 'hook') && effectiveMatch === null) {
+    return { kind, key, source: 'plugin/read', status: 'UNOBSERVABLE' };
+  }
+
+  if ((kind === 'skill' || kind === 'hook') && effectiveMatch === undefined) {
+    return {
+      kind,
+      key,
+      source: kind === 'skill'
+        ? 'plugin/read + skills/list'
+        : 'plugin/read + hooks/list',
+      status: 'MISSING'
+    };
+  }
+}
+
 export function exitCodeForStatus(status) {
-  return EXIT_CODES[status];
+  return {
+    PASS: 0,
+    FAIL: 1,
+    TOOL_ERROR: 2,
+    INCONCLUSIVE: 3,
+    ISOLATION_VIOLATION: 4
+  }[status];
 }
