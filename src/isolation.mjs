@@ -65,6 +65,25 @@ function runInvocation(invocation) {
   });
 }
 
+function linuxIdentity(dependencies) {
+  const getuid = dependencies.getuid ?? process.getuid;
+  const getgid = dependencies.getgid ?? process.getgid;
+  if (typeof getuid !== 'function' || typeof getgid !== 'function') {
+    throw new Error('Strict isolation requires the invoking Linux UID and GID');
+  }
+  const uid = getuid();
+  const gid = getgid();
+  if (
+    !Number.isSafeInteger(uid) ||
+    uid < 0 ||
+    !Number.isSafeInteger(gid) ||
+    gid < 0
+  ) {
+    throw new Error('Strict isolation requires non-negative integer UID and GID');
+  }
+  return { gid, uid };
+}
+
 async function hashCheckout(targetRoot) {
   const hash = createHash('sha256');
 
@@ -104,24 +123,45 @@ export async function createIsolation(options, dependencies = {}) {
   if (options.mode === 'strict' && options.platform !== 'linux') {
     throw new Error('Strict isolation requires Linux');
   }
+  const receiptBasename = path.basename(options.receiptPath ?? '');
+  if (
+    receiptBasename === '' ||
+    receiptBasename === '.' ||
+    receiptBasename === '..' ||
+    /[\\/\0]/.test(receiptBasename)
+  ) {
+    throw new Error('Receipt path must have a safe filename');
+  }
   const parentEnv = dependencies.parentEnv ?? process.env;
   const platformEnv = platformEnvironment(parentEnv);
+  let identity;
+  let toolRoot;
   if (options.mode === 'strict') {
     if (!/^\d+\.\d+\.\d+$/.test(options.codexVersion ?? '')) {
       throw new Error('Strict isolation requires an exact stable numeric Codex version');
     }
+    identity = linuxIdentity(dependencies);
     const dockerAvailable = dependencies.dockerAvailable ?? hasDocker;
     if (!(await dockerAvailable(platformEnv))) {
       throw new Error('Strict isolation requires Docker');
     }
+    toolRoot = await realpath(
+      path.resolve(
+        dependencies.toolRoot ?? fileURLToPath(new URL('..', import.meta.url))
+      )
+    );
   }
-  const targetRoot = path.resolve(options.targetRoot);
+  const targetRoot = await realpath(path.resolve(options.targetRoot));
   const checkoutHash = await hashCheckout(targetRoot);
 
   const canonicalTemporaryDirectory = await realpath(os.tmpdir());
   const ownedPrefix = path.join(canonicalTemporaryDirectory, 'codex-plugin-check-');
   const root = await mkdtemp(ownedPrefix);
   const canonicalRoot = await realpath(root);
+  const outputDirectory = path.join(canonicalRoot, 'output');
+  const outputPath = path.join(outputDirectory, receiptBasename);
+  const containerReceiptPath = `/output/${receiptBasename}`;
+  await mkdir(outputDirectory);
   const env = { ...platformEnv };
   for (const [name, directory] of Object.entries(OWNED_PATHS)) {
     env[name] = path.join(root, directory);
@@ -129,10 +169,6 @@ export async function createIsolation(options, dependencies = {}) {
   }
   let strictConfig;
   if (options.mode === 'strict') {
-    const toolRoot = path.resolve(
-      dependencies.toolRoot ?? fileURLToPath(new URL('..', import.meta.url))
-    );
-    const receiptDirectory = path.resolve(path.dirname(options.receiptPath));
     const image = `codex-plugin-check:codex-${options.codexVersion}`;
     const runCommand = dependencies.runCommand ?? runInvocation;
     try {
@@ -154,12 +190,15 @@ export async function createIsolation(options, dependencies = {}) {
       await rm(canonicalRoot, { recursive: true, force: true });
       throw cause;
     }
-    strictConfig = { image, receiptDirectory, targetRoot, toolRoot };
+    strictConfig = { identity, image, outputDirectory, targetRoot, toolRoot };
   }
 
   return {
     root,
     env,
+    outputDirectory,
+    outputPath,
+    containerReceiptPath,
     wrap(command, args = []) {
       if (strictConfig) {
         const containerPaths = {
@@ -188,17 +227,17 @@ export async function createIsolation(options, dependencies = {}) {
             '--security-opt',
             'no-new-privileges',
             '--user',
-            '1000:1000',
+            `${strictConfig.identity.uid}:${strictConfig.identity.gid}`,
             '--workdir',
             '/workspace',
             '--tmpfs',
-            '/state:rw,noexec,nosuid,nodev,size=64m,uid=1000,gid=1000,mode=0700',
+            `/state:rw,noexec,nosuid,nodev,size=64m,uid=${strictConfig.identity.uid},gid=${strictConfig.identity.gid},mode=0700`,
             '--mount',
             `type=bind,src=${strictConfig.targetRoot},dst=/workspace,readonly`,
             '--mount',
             `type=bind,src=${strictConfig.toolRoot},dst=/tool,readonly`,
             '--mount',
-            `type=bind,src=${strictConfig.receiptDirectory},dst=/output`,
+            `type=bind,src=${strictConfig.outputDirectory},dst=/output`,
             ...containerEnv,
             '--entrypoint',
             '/bin/sh',
