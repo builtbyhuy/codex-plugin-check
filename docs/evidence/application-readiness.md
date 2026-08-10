@@ -4,13 +4,13 @@
 
 `HOLD — NOT READY TO SUBMIT`.
 
-The repository and `v0.1.0` release are public, but there is no independent
-retained usage or sustained public maintenance history yet. The technical
-strict-Linux and public-fixture gates pass, and two bounded maintainer contacts
-have been sent, but submitting now would establish only that Huy created,
-validated and published a project. It would not establish the usage, ecosystem
-importance, or ongoing maintainer responsibility that OpenAI asks applicants
-to explain.
+The repository and releases through `v0.1.1` are public, but there is no
+independent retained usage or sustained public maintenance history yet. The
+technical strict-Linux and public-fixture gates pass, and two bounded
+maintainer contacts have been sent, but submitting now would establish only
+that Huy created, validated and published a project. It would not establish the
+usage, ecosystem importance, or ongoing maintainer responsibility that OpenAI
+asks applicants to explain.
 
 OpenAI's current form says eligible applicants maintain active open-source
 projects and that reviewers consider meaningful usage, broad adoption or clear
@@ -28,7 +28,7 @@ Source: [Codex for Open Source](https://openai.com/form/codex-for-oss/).
 | Public-plugin compatibility | `PASS` | Reconciled 10-repository, 20-cell strict matrix |
 | Independent retained use | `0` | External repositories keep the workflow enabled |
 | Unknown regression caught | `1 local defect` | Publicly linkable regression/issue accepted or reproduced externally |
-| Releases | `1 experimental release` | [v0.1.0](https://github.com/builtbyhuy/codex-plugin-check/releases/tag/v0.1.0); additional feedback-driven releases required |
+| Releases | `2 experimental releases` | [v0.1.0](https://github.com/builtbyhuy/codex-plugin-check/releases/tag/v0.1.0) carries the strict evidence; [v0.1.1](https://github.com/builtbyhuy/codex-plugin-check/releases/tag/v0.1.1) adds distribution metadata and is not feedback-driven; additional feedback-driven releases required |
 | Ongoing maintainer duties | `INSUFFICIENT` | Public issue triage, PR review and release work over time |
 | Application | `NOT SUBMITTED` | All required form fields bound to public evidence |
 
