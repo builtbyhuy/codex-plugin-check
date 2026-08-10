@@ -1,0 +1,37 @@
+name: Codex Plugin Check
+description: Verify Codex plugin discovery and emit a reproducible conformance receipt.
+inputs:
+  marketplace-root:
+    description: Local Codex plugin marketplace root.
+    required: true
+  plugin:
+    description: Plugin name in the marketplace.
+    required: true
+  codex:
+    description: Codex binary for environment diagnostics.
+    required: false
+    default: codex
+  codex-version:
+    description: Exact stable Codex version.
+    required: true
+  cwd:
+    description: Probe workspace, which must be inside the marketplace in strict mode.
+    required: false
+  output:
+    description: Receipt destination.
+    required: false
+    default: conformance.json
+  isolation:
+    description: Isolation mode, either strict or env.
+    required: false
+    default: strict
+outputs:
+  status:
+    description: Conformance status from the receipt.
+  receipt:
+    description: Full JSON conformance receipt.
+  codex-version:
+    description: Released Codex version observed by the checker.
+runs:
+  using: node24
+  main: src/action.mjs
