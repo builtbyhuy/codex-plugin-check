@@ -471,6 +471,69 @@ git add .github README.md LICENSE SECURITY.md CONTRIBUTING.md docs/receipt.schem
 git commit -m "docs: prepare evidence-bound v0 release"
 ```
 
+### Task 7A: Exact public-fixture compatibility matrix
+
+**Files:**
+- Create: `scripts/falsify-public-fixtures.mjs`
+- Create: `test/public-fixtures.test.mjs`
+- Create: `.github/workflows/public-fixtures.yml`
+- Create: `docs/evidence/public-fixture-matrix.md`
+- Modify: `package.json`
+- Modify: `test/workflow-contract.test.mjs`
+
+**Interfaces:**
+- The matrix is fixed to the ten immutable repository commits audited in
+  `PUBLIC_FIXTURE_AUDIT.md` and exact Codex `0.147.0` plus `0.146.1`.
+- Nine fixtures are byte-for-byte `DIRECT`. `oh-my-cassette` alone uses the
+  bounded `local-source-v1` JSON adapter, replacing only
+  `/plugins/0/source` with a local source and recording before/after hashes.
+- Public source is fetched without credentials into owned temporary state.
+  No repository script, build, dependency install, hook, MCP server, app, or
+  model is executed. No upstream source file is published in the artifact.
+
+- [ ] **Step 1: Write failing safety, identity, adapter, and ledger tests**
+
+Bind exactly ten unique HTTPS GitHub repositories, full commit SHAs, expected
+plugin IDs, marketplace roots, licenses, and adapter IDs. Reject mutable refs,
+path escapes, duplicate rows, extra adapter fields, untrusted workflow events,
+receipt identity drift, missing expected capability kinds, absolute evidence
+paths, and arbitrary tool errors mislabeled as incompatibility.
+
+- [ ] **Step 2: Verify RED**
+
+Run: `node --test test/public-fixtures.test.mjs test/workflow-contract.test.mjs`
+
+Expected: FAIL because the fixed runner and trusted workflow do not exist.
+
+- [ ] **Step 3: Implement the bounded fixed runner**
+
+Fetch and verify each exact commit with an isolated Git configuration, remove
+only owned Git metadata before probing, preserve upstream license/notice files,
+apply the single audited static adapter, and run the production strict CLI for
+all 20 repository/version cells. Validate every receipt with the production
+schema and exact source/plugin/platform/isolation expectations. A conformance
+receipt may truthfully be `FAIL`; an unexpected tool error fails the matrix.
+
+- [ ] **Step 4: Run non-certifying local environment probes**
+
+Use the prepared released `0.147.0` and `0.146.1` binaries to reconcile each
+observed capability set against the immutable source before strict CI. Record
+these only as diagnostics; they cannot satisfy the strict gate.
+
+- [ ] **Step 5: Run the strict matrix in the private remote**
+
+The workflow is main-push/manual only, least privilege, Node 24, pinned Actions,
+and always uploads a relative-path evidence ledger. Observe all 20 cells inside
+the existing network/host-state-denied boundary. Retain source/tree/adapter
+hashes, sanitized receipts, run SHA/URL, and artifact identity.
+
+- [ ] **Step 6: Reconcile and review before publication**
+
+Independently compare the artifact to immutable source expectations. Mark the
+technical public-fixture gate `PASS` only when all ten fixtures have complete
+observations or an evidence-backed version/API incompatibility classification.
+Keep project/publication `HOLD` for any unexplained error or missing row.
+
 ### Task 8: Bounded maintainer validation and application hold
 
 **Files:**
