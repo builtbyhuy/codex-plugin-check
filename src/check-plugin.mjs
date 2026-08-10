@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { readFile, realpath } from 'node:fs/promises';
+import { readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { AppServerClient } from './app-server-client.mjs';
 import { createIsolation as createRealIsolation } from './isolation.mjs';
@@ -73,33 +73,40 @@ export async function resolveMarketplaceManifestPath(
 ) {
   const read = dependencies.readFile ?? readFile;
   const canonicalize = dependencies.realpath ?? realpath;
+  const inspect = dependencies.stat ?? stat;
   const canonicalRoot = await canonicalize(marketplaceRoot);
-  let invalidManifest = false;
+  // Keep this order aligned with core-plugins/src/marketplace.rs in Codex.
   for (const relativePath of [
     path.join('.agents', 'plugins', 'marketplace.json'),
-    path.join('.claude-plugin', 'marketplace.json')
+    path.join('.agents', 'plugins', 'api_marketplace.json'),
+    path.join('.claude-plugin', 'marketplace.json'),
+    path.join('.cursor-plugin', 'marketplace.json')
   ]) {
     const candidate = path.join(canonicalRoot, relativePath);
-    let manifest;
+    let canonicalPath;
     try {
-      manifest = JSON.parse(await read(candidate, 'utf8'));
+      canonicalPath = await canonicalize(candidate);
     } catch (cause) {
-      if (cause?.code === 'ENOENT') continue;
-      if (cause instanceof SyntaxError) {
-        invalidManifest = true;
-        continue;
-      }
+      if (cause?.code === 'ENOENT' || cause?.code === 'ENOTDIR') continue;
       throw cause;
     }
-    if (manifest?.name !== marketplaceName) continue;
-    const canonicalPath = await canonicalize(candidate);
     if (!pathIsWithin(canonicalPath, canonicalRoot)) {
       throw new Error('Marketplace manifest escaped the marketplace root');
     }
+    if (!(await inspect(canonicalPath)).isFile()) continue;
+    let manifest;
+    try {
+      manifest = JSON.parse(await read(canonicalPath, 'utf8'));
+    } catch (cause) {
+      if (cause instanceof SyntaxError) {
+        throw new Error('Selected marketplace manifest was not valid JSON');
+      }
+      throw cause;
+    }
+    if (manifest?.name !== marketplaceName) {
+      throw new Error('Selected marketplace manifest identity did not match Codex marketplace output');
+    }
     return canonicalPath;
-  }
-  if (invalidManifest) {
-    throw new Error(`No valid marketplace manifest matched ${marketplaceName}`);
   }
   throw new Error(`No marketplace manifest matched ${marketplaceName}`);
 }
