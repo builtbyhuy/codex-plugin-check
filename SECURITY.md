@@ -2,17 +2,18 @@
 
 ## Current support status
 
-Codex Plugin Check is experimental and has no supported public release while
-the project is on HOLD. Security fixes are prepared against the current
-development branch and become release candidates only after the strict Linux
-evidence gates pass.
+`v0.1.0` is the current experimental release. The maintainer accepts private
+security reports for the latest release and current `main`, but does not claim
+production readiness or a stable compatibility guarantee. A security fix must
+pass the relevant regression suite and, for strict-boundary changes, produce
+fresh released-Codex Linux evidence before a new release.
 
 ## Report a vulnerability privately
 
 Do not open a public issue for a suspected vulnerability.
 
-After the GitHub repository exists, use **Security → Report a vulnerability**
-to open a private security advisory. The intended private advisory endpoint is
+Use **Security → Report a vulnerability** to open a private security advisory.
+The private advisory endpoint is
 `https://github.com/builtbyhuy/codex-plugin-check/security/advisories/new`.
 If that private form is unavailable, contact `@builtbyhuy` through the GitHub
 profile only to request a private channel; do not include vulnerability details
