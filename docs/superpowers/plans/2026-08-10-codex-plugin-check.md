@@ -323,7 +323,7 @@ git commit -m "feat: check codex plugin discovery"
   cleans owned state, and only then writes the certified receipt to the caller
   destination.
 
-- [ ] **Step 1: Write failing CLI and Action adapter tests**
+- [x] **Step 1: Write failing CLI and Action adapter tests**
 
 CLI tests cover `--help`, missing required input, unknown flags, stable exit
 codes, JSON receipt writing, a one-screen summary, and the strict outer/inner
@@ -333,24 +333,24 @@ child exit code must agree, and that every finalizer runs on failure. Action
 tests use a real temporary `GITHUB_OUTPUT` file and assert multiline-safe output
 formatting.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `node --test test/cli.test.mjs test/action.test.mjs`  
 Expected: FAIL because both adapters are absent.
 
-- [ ] **Step 3: Implement thin adapters**
+- [x] **Step 3: Implement thin adapters**
 
 Keep parsing and GitHub output formatting local to the adapters; all checking
 continues through `checkPlugin`. Strict certification is an adapter concern,
 not a hidden option accepted by `checkPlugin`. `action.yml` uses `runs.using:
 node24` and `runs.main: src/action.mjs`.
 
-- [ ] **Step 4: Verify GREEN**
+- [x] **Step 4: Verify GREEN**
 
 Run: `node --test test/cli.test.mjs test/action.test.mjs && npm test`  
 Expected: all tests pass with no writes outside their temporary directories.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/cli.mjs src/action.mjs action.yml test/cli.test.mjs test/action.test.mjs package.json
