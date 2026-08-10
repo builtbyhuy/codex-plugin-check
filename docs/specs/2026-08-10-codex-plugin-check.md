@@ -56,7 +56,10 @@ certified isolation `PASS`.
 3. Construct an allowlisted child environment. Set `HOME`, `CODEX_HOME`,
    `TMPDIR`, and every XDG home to owned paths. Remove OpenAI, ChatGPT, GitHub,
    npm, cloud, SSH-agent, proxy, and telemetry credential variables.
-4. Add the local marketplace and install the named plugin with the released
+4. In strict mode, start one network-denied container for the complete probe;
+   do not start one ephemeral container per Codex command because install state
+   must persist through discovery. Inside that boundary, add the local
+   marketplace and install the named plugin with the released
    Codex binary. Verify the CLI's JSON says the plugin is installed from the
    requested local marketplace.
 5. Start `codex app-server --stdio --disable remote_plugin` inside the isolated
@@ -153,6 +156,8 @@ records sort by `kind`, then `key`.
   to `env` isolation.
 - The target checkout is read-only during the probe. The only writable paths
   are inside the owned temporary root and the explicit receipt destination.
+- Marketplace add, plugin add/list, and app-server introspection run in the
+  same strict-container lifetime and share one isolated `HOME`/`CODEX_HOME`.
 
 ## Non-goals
 

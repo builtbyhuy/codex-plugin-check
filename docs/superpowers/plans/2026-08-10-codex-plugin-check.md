@@ -177,6 +177,9 @@ git commit -m "feat: add bounded app server client"
   writable state/output mounts only. `Dockerfile` installs exactly
   `@openai/codex@${CODEX_VERSION}` during image preparation; no package install
   occurs in the network-denied run.
+- `wrap(command,args)` is called once around the complete internal checker,
+  never once per Codex subcommand; the single container lifetime preserves
+  marketplace/install state through app-server discovery.
 - `env` contains only the platform essentials plus explicit isolated path
   variables; all variable names matching credential deny patterns are absent.
 
@@ -241,7 +244,7 @@ git commit -m "feat: isolate codex probe state"
 
 - [ ] **Step 1: Write failing orchestration tests with behavior-level fakes**
 
-Assert the exact command sequence and that the four app-server requests use:
+Assert the exact command sequence and that the three app-server requests use:
 
 ```js
 [
@@ -266,6 +269,11 @@ and Codex app-server responses. Normalize effective skills from every
 `SkillsListResponse.data[].skills` item and hooks from every
 `HooksListResponse.data[].hooks` item whose `source` is `plugin` and whose
 `pluginId` or source path identifies the installed plugin.
+
+`checkPlugin` is the internal single-process pipeline. It uses direct child
+commands plus environment isolation and does not create a strict container per
+subcommand. The CLI/Action adapter in Task 5 invokes this complete pipeline once
+inside `IsolationContext.wrap(...)` when strict mode is selected.
 
 - [ ] **Step 4: Verify GREEN and checkout integrity**
 
@@ -295,6 +303,11 @@ git commit -m "feat: check codex plugin discovery"
   `INPUT_CODEX-VERSION`, `INPUT_CWD`, `INPUT_OUTPUT`, and `INPUT_ISOLATION`; it writes GitHub command
   output directly without `@actions/core`.
 - Action outputs: `status`, `receipt`, and `codex-version`.
+- Strict outer mode creates one container context, invokes the CLI once with an
+  internal env-only marker and container paths (`/workspace`, `/output`,
+  `/usr/local/bin/codex`), copies the staged receipt to the caller destination,
+  verifies checkout integrity, and cleans the owned context. The internal
+  marker is rejected unless the strict wrapper sets its private sentinel.
 
 - [ ] **Step 1: Write failing CLI and Action adapter tests**
 
