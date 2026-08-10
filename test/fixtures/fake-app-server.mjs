@@ -1,18 +1,15 @@
 import readline from 'node:readline';
-import { readFileSync } from 'node:fs';
+import { closeSync } from 'node:fs';
 
 const mode = process.argv[2];
 if (mode === undefined) process.exit(0);
-const packageJson = JSON.parse(
-  readFileSync(new URL('../../package.json', import.meta.url), 'utf8')
-);
-const expectedVersion = packageJson.version ?? '0.0.0';
 const lines = readline.createInterface({ input: process.stdin });
 
-if (mode === 'stubborn') {
+if (mode === 'stubborn' || mode === 'stubborn-malformed') {
   process.on('SIGTERM', () => {});
   setInterval(() => {}, 1_000);
 }
+if (mode === 'stdin-race') setInterval(() => {}, 1_000);
 
 let initialized = false;
 
@@ -27,7 +24,7 @@ lines.on('line', (line) => {
     const expectedParams = {
       clientInfo: {
         name: 'codex-plugin-check',
-        version: expectedVersion
+        version: '0.1.0'
       },
       capabilities: { experimentalApi: true }
     };
@@ -46,7 +43,8 @@ lines.on('line', (line) => {
         codexHome: '/tmp/fake-codex-home',
         platformFamily: 'unix',
         platformOs: 'fake-os',
-        userAgent: 'fake-app-server/1.0'
+        userAgent: 'fake-app-server/1.0',
+        ...(mode === 'ids' ? { receivedId: message.id } : {})
       }
     });
     return;
@@ -54,6 +52,11 @@ lines.on('line', (line) => {
 
   if (message.method === 'initialized' && message.id === undefined) {
     initialized = true;
+    if (mode === 'stdin-race') {
+      process.stdin.on('error', () => {});
+      lines.close();
+      closeSync(0);
+    }
     return;
   }
 
@@ -62,6 +65,11 @@ lines.on('line', (line) => {
       id: message.id,
       error: { code: -32002, message: 'Not initialized' }
     });
+    return;
+  }
+
+  if (mode === 'ids') {
+    send({ id: message.id, result: { receivedId: message.id } });
     return;
   }
 
@@ -75,6 +83,41 @@ lines.on('line', (line) => {
 
   if (mode === 'malformed') {
     process.stdout.write('{not valid JSON}\n');
+    return;
+  }
+
+  if (mode === 'stubborn-malformed') {
+    process.stdout.write('{fatal malformed JSON}\n');
+    return;
+  }
+
+  if (mode === 'json-null') {
+    process.stdout.write('null\n');
+    return;
+  }
+
+  if (mode === 'json-array') {
+    process.stdout.write('[]\n');
+    return;
+  }
+
+  if (mode === 'null-error') {
+    send({ id: message.id, error: null });
+    return;
+  }
+
+  if (mode === 'invalid-error') {
+    send({ id: message.id, error: { code: 'bad', message: 7 } });
+    return;
+  }
+
+  if (mode === 'unknown-id') {
+    send({ id: message.id + 100, result: {} });
+    return;
+  }
+
+  if (mode === 'invalid-id') {
+    send({ id: String(message.id), result: {} });
     return;
   }
 

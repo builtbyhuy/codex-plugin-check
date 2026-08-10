@@ -5,7 +5,15 @@ import readline from 'node:readline';
 const packageJson = JSON.parse(
   readFileSync(new URL('../package.json', import.meta.url), 'utf8')
 );
-const clientVersion = packageJson.version ?? '0.0.0';
+if (
+  typeof packageJson.version !== 'string' ||
+  !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(
+    packageJson.version
+  )
+) {
+  throw new Error('package.json must contain a valid version');
+}
+const clientVersion = packageJson.version;
 const MAX_STDERR_BYTES = 64 * 1024;
 
 export class AppServerClient {
@@ -37,7 +45,20 @@ export class AppServerClient {
         this.#fail(new Error('App-server emitted malformed JSONL', { cause }));
         return;
       }
+      if (
+        message === null ||
+        typeof message !== 'object' ||
+        Array.isArray(message)
+      ) {
+        this.#fail(new Error('App-server emitted an invalid JSONL message'));
+        return;
+      }
       if (message.id === undefined) return;
+
+      if (!Number.isSafeInteger(message.id)) {
+        this.#fail(new Error('App-server emitted an invalid response ID'));
+        return;
+      }
 
       if (this.responseIds.has(message.id)) {
         this.#fail(new Error(`App-server emitted duplicate response ID ${message.id}`));
@@ -46,7 +67,22 @@ export class AppServerClient {
       this.responseIds.add(message.id);
 
       const pending = this.pending.get(message.id);
-      if (!pending) return;
+      if (!pending) {
+        this.#fail(new Error(`App-server emitted unknown response ID ${message.id}`));
+        return;
+      }
+
+      if (
+        message.error !== undefined &&
+        (message.error === null ||
+          typeof message.error !== 'object' ||
+          Array.isArray(message.error) ||
+          !Number.isInteger(message.error.code) ||
+          typeof message.error.message !== 'string')
+      ) {
+        this.#fail(new Error('App-server emitted an invalid JSON-RPC error'));
+        return;
+      }
 
       this.pending.delete(message.id);
       clearTimeout(pending.timer);
@@ -63,6 +99,11 @@ export class AppServerClient {
     });
     child.once('error', (cause) => {
       this.#fail(new Error(`App-server process failed: ${cause.message}`, { cause }));
+    });
+    child.stdin.on('error', (cause) => {
+      this.#fail(
+        new Error(`App-server stdin write failed: ${cause.message}`, { cause })
+      );
     });
     child.stderr.on('data', (chunk) => {
       const remaining = MAX_STDERR_BYTES - this.stderrBytes;
@@ -114,44 +155,54 @@ export class AppServerClient {
   }
 
   close() {
+    return this.#shutdown(new Error('App-server client closed'));
+  }
+
+  #write(message) {
+    this.child.stdin.write(`${JSON.stringify(message)}\n`, (cause) => {
+      if (cause) {
+        this.#fail(
+          new Error(`App-server stdin write failed: ${cause.message}`, { cause })
+        );
+      }
+    });
+  }
+
+  #fail(error) {
+    void this.#shutdown(error);
+  }
+
+  #shutdown(error) {
+    if (!this.failure) {
+      this.failure = error;
+      for (const pending of this.pending.values()) {
+        clearTimeout(pending.timer);
+        pending.reject(error);
+      }
+      this.pending.clear();
+    }
     if (this.closePromise) return this.closePromise;
 
     this.closing = true;
     let forceTimer;
-    this.closePromise = new Promise((resolve) => {
-      const finish = () => {
-        clearTimeout(forceTimer);
-        resolve();
-      };
-      if (this.child.exitCode !== null || this.child.signalCode !== null) {
-        finish();
-        return;
-      }
-      this.child.once('close', finish);
-    });
-    this.#fail(new Error('App-server client closed'));
-    if (this.child.exitCode === null && this.child.signalCode === null) {
+    const alreadyClosed =
+      this.child.exitCode !== null || this.child.signalCode !== null;
+    this.closePromise = alreadyClosed
+      ? Promise.resolve()
+      : new Promise((resolve) => {
+          this.child.once('close', () => {
+            clearTimeout(forceTimer);
+            resolve();
+          });
+        });
+
+    this.lines.close();
+    this.child.stdin.destroy();
+    if (!alreadyClosed) {
+      this.child.kill('SIGTERM');
       forceTimer = setTimeout(() => this.child.kill('SIGKILL'), 100);
       forceTimer.unref();
     }
     return this.closePromise;
-  }
-
-  #write(message) {
-    this.child.stdin.write(`${JSON.stringify(message)}\n`);
-  }
-
-  #fail(error) {
-    if (this.failure) return;
-
-    this.failure = error;
-    for (const pending of this.pending.values()) {
-      clearTimeout(pending.timer);
-      pending.reject(error);
-    }
-    this.pending.clear();
-    this.lines.close();
-    this.child.stdin.destroy();
-    this.child.kill();
   }
 }
