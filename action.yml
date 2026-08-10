@@ -35,3 +35,6 @@ outputs:
 runs:
   using: node24
   main: src/action.mjs
+branding:
+  icon: check-circle
+  color: blue

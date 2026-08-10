@@ -95,7 +95,7 @@ function parseGithubOutput(text) {
   return values;
 }
 
-test('action metadata uses Node 24 and declares the complete input/output surface', async () => {
+test('action metadata uses Node 24 and declares the complete Marketplace surface', async () => {
   const source = await readFile(new URL('../action.yml', import.meta.url), 'utf8');
 
   assert.match(source, /^name:/m);
@@ -109,6 +109,7 @@ test('action metadata uses Node 24 and declares the complete input/output surfac
   }
   assert.match(source, /^  using: node24$/m);
   assert.match(source, /^  main: src\/action\.mjs$/m);
+  assert.match(source, /^branding:\n  icon: check-circle\n  color: blue$/m);
 });
 
 test('action delegates all inputs and publishes multiline-safe receipt outputs', async (t) => {
