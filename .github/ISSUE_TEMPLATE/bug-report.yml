@@ -1,0 +1,97 @@
+name: Bug report
+description: Report a reproducible loader, receipt, or isolation defect.
+title: "[bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include credentials, private plugin source, personal Codex state, or unredacted home paths. Suspected vulnerabilities belong in a [private security advisory](https://github.com/builtbyhuy/codex-plugin-check/security/advisories/new), not this form.
+
+  - type: checkboxes
+    id: public-safe
+    attributes:
+      label: Public-report safety
+      options:
+        - label: This is not a suspected security vulnerability, and I removed secrets and personal paths.
+          required: true
+
+  - type: input
+    id: checker-ref
+    attributes:
+      label: Checker version or full commit SHA
+      description: Use the exact release tag or immutable commit tested.
+      placeholder: v0.1.0 or 40-character commit SHA
+    validations:
+      required: true
+
+  - type: input
+    id: codex-version
+    attributes:
+      label: Codex version
+      description: Paste the exact stable version reported by the Codex binary.
+      placeholder: 0.147.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: isolation
+    attributes:
+      label: Isolation mode
+      options:
+        - strict
+        - env
+    validations:
+      required: true
+
+  - type: input
+    id: host
+    attributes:
+      label: Host environment
+      description: Include OS, architecture, Node version, and Docker version when strict mode was used.
+      placeholder: Ubuntu 24.04, x64, Node 24.19.0, Docker 28.x
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Provide the smallest public or synthetic plugin and exact command/workflow inputs that reproduce the result.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+    validations:
+      required: true
+
+  - type: textarea
+    id: receipt
+    attributes:
+      label: Sanitized receipt
+      description: Paste the complete JSON receipt after removing secrets and personal paths.
+      render: json
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Reproduction checks
+      options:
+        - label: I reproduced this from a clean checkout with the exact versions above.
+          required: true
+        - label: I checked for an existing issue describing the same behavior.
+          required: true
