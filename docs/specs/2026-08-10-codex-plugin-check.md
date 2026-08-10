@@ -147,6 +147,8 @@ records sort by `kind`, then `key`.
   only owned state and receipt destinations are writable. macOS and Windows are
   diagnostic `env` mode only until an equivalent observable boundary is
   implemented.
+- The V0 build base is pinned to the official multi-architecture image
+  `node:24.19.0-bookworm-slim@sha256:3638d9a6fe4030bd716be989438248074489337ba3275657f93595428be4fc03`.
 - Failure to establish the OS boundary is an error, not an automatic downgrade
   to `env` isolation.
 - The target checkout is read-only during the probe. The only writable paths

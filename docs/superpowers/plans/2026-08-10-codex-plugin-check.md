@@ -13,6 +13,7 @@
 - Implement the approved specification at `docs/specs/2026-08-10-codex-plugin-check.md` verbatim where it defines names, statuses, exit codes, versions, and safety boundaries.
 - Apply strict TDD: every production behavior is preceded by a focused test observed failing for the intended reason.
 - Runtime dependencies remain zero; development dependencies are also avoided unless a release artifact cannot be produced with Node built-ins.
+- Strict images use `node:24.19.0-bookworm-slim@sha256:3638d9a6fe4030bd716be989438248074489337ba3275657f93595428be4fc03` exactly.
 - Never execute plugin hooks, MCP servers, plugin scripts, app authentication, or model requests.
 - Never read or edit credential files; child processes receive an allowlisted environment with credential variables removed.
 - Do not publish a public release until hard technical gates 1, 2, 4, 5, and 6 pass.
