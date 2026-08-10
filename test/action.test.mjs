@@ -39,13 +39,29 @@ function captureIo() {
 }
 
 function validReceipt(overrides = {}) {
+  const status = overrides.status ?? 'PASS';
+  const capabilities = status === 'FAIL'
+    ? [{
+        kind: 'skill',
+        key: 'sample:missing',
+        source: 'plugin/read + skills/list',
+        status: 'MISSING'
+      }]
+    : status === 'INCONCLUSIVE'
+      ? [{
+          kind: 'skill',
+          key: 'sample:unobservable',
+          source: 'plugin/read',
+          status: 'UNOBSERVABLE'
+        }]
+      : [];
   return {
     schemaVersion: '0.1.0',
-    status: 'PASS',
+    status,
     codexVersion: '0.147.0',
-    platform: 'linux-x64',
+    platform: `linux-${process.arch}`,
     plugin: { name: 'sample', marketplace: 'local', sourceRoot: '/workspace' },
-    capabilities: [],
+    capabilities,
     isolation: { mode: 'strict', network: 'denied', hostState: 'denied' },
     ...overrides
   };
@@ -98,15 +114,7 @@ test('action metadata uses Node 24 and declares the complete input/output surfac
 test('action delegates all inputs and publishes multiline-safe receipt outputs', async (t) => {
   const { runAction } = await import('../src/action.mjs');
   const fixture = await makeFixture(t);
-  const receipt = {
-    schemaVersion: '0.1.0',
-    status: 'FAIL',
-    codexVersion: '0.147.0',
-    platform: 'linux-x64',
-    plugin: { name: 'sample', marketplace: 'local', sourceRoot: '/workspace' },
-    capabilities: [],
-    isolation: { mode: 'strict', network: 'denied', hostState: 'denied' }
-  };
+  const receipt = validReceipt({ status: 'FAIL' });
   let receivedArgv;
   const uuids = ['status-id', 'receipt-id', 'version-id'];
 
@@ -254,6 +262,7 @@ test('Action rejects fresh but incomplete or identity-swapped receipts', async (
     { label: 'missing plugin', receipt: validReceipt({ plugin: undefined }) },
     { label: 'missing platform', receipt: validReceipt({ platform: undefined }) },
     { label: 'wrong strict platform', receipt: validReceipt({ platform: 'darwin-arm64' }) },
+    { label: 'invented strict architecture', receipt: validReceipt({ platform: 'linux-fake' }) },
     { label: 'missing capabilities', receipt: validReceipt({ capabilities: undefined }) },
     { label: 'missing isolation', receipt: validReceipt({ isolation: undefined }) },
     {
@@ -301,6 +310,67 @@ test('Action rejects fresh but incomplete or identity-swapped receipts', async (
     assert.match(capture.stderr(), /^Error: /, label);
     await assert.rejects(access(fixture.githubOutput), { code: 'ENOENT' });
   }
+});
+
+test('Action rejects a PASS receipt containing a failing capability outcome', async (t) => {
+  const { runAction } = await import('../src/action.mjs');
+  const fixture = await makeFixture(t);
+  const capture = captureIo();
+  const receipt = validReceipt({
+    capabilities: [{
+      kind: 'skill',
+      key: 'sample:missing',
+      source: 'plugin/read + skills/list',
+      status: 'MISSING'
+    }]
+  });
+
+  const code = await runAction(actionEnv(fixture), capture.io, {
+    cliMain: async () => {
+      await atomicReceipt(fixture.receiptPath, receipt);
+      return 0;
+    }
+  });
+
+  assert.equal(code, 2);
+  assert.match(capture.stderr(), /status.*capabilit/i);
+  await assert.rejects(access(fixture.githubOutput), { code: 'ENOENT' });
+});
+
+test('Action publishes PASS for declaration-only and untrusted capabilities', async (t) => {
+  const { runAction } = await import('../src/action.mjs');
+  const fixture = await makeFixture(t);
+  const receipt = validReceipt({
+    capabilities: [
+      {
+        kind: 'hook',
+        key: 'sample:untrusted',
+        source: 'plugin/read + hooks/list',
+        status: 'DISCOVERED_UNTRUSTED'
+      },
+      {
+        kind: 'mcp',
+        key: 'sample-mcp',
+        source: 'plugin/read',
+        status: 'DECLARED_ONLY'
+      }
+    ]
+  });
+  const uuids = ['status', 'receipt', 'version'];
+
+  const code = await runAction(actionEnv(fixture), process, {
+    cliMain: async () => {
+      await atomicReceipt(fixture.receiptPath, receipt);
+      return 0;
+    },
+    randomUUID: () => uuids.shift()
+  });
+
+  assert.equal(code, 0);
+  assert.equal(
+    parseGithubOutput(await readFile(fixture.githubOutput, 'utf8')).status.value,
+    'PASS'
+  );
 });
 
 test('Action validates an env receipt against the canonical root and current platform', async (t) => {

@@ -61,7 +61,7 @@ async function receiptExpectation(env, baseDirectory, dependencies) {
     return {
       ...common,
       sourceRoot: '/workspace',
-      platformOs: 'linux',
+      platform: `linux-${dependencies.architecture ?? process.arch}`,
       isolation: { mode: 'strict', network: 'denied', hostState: 'denied' }
     };
   }

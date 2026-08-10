@@ -216,6 +216,12 @@ function hasExactIsolation(receipt, expected) {
     receipt.isolation.hostState === expected.hostState;
 }
 
+function expectedStatusForCapabilities(capabilities) {
+  if (capabilities.some(({ status }) => status === 'MISSING')) return 'FAIL';
+  if (capabilities.some(({ status }) => status === 'UNOBSERVABLE')) return 'INCONCLUSIVE';
+  return 'PASS';
+}
+
 export function validateReceipt(receipt, expected) {
   if (typeof expected?.codexVersion !== 'string' || expected.codexVersion === '' ||
     typeof expected?.plugin !== 'string' || expected.plugin === '' ||
@@ -237,10 +243,7 @@ export function validateReceipt(receipt, expected) {
     throw new Error('Probe receipt plugin identity or source root does not match the request');
   }
   const platformMatches = typeof receipt.platform === 'string' && receipt.platform !== '' &&
-    (expected.platform === undefined || receipt.platform === expected.platform) &&
-    (expected.platformOs === undefined ||
-      (receipt.platform.startsWith(`${expected.platformOs}-`) &&
-        receipt.platform.length > expected.platformOs.length + 1));
+    (expected.platform === undefined || receipt.platform === expected.platform);
   if (!platformMatches ||
     !Array.isArray(receipt.capabilities) || receipt.capabilities.some((capability) =>
       !CAPABILITY_KINDS.has(capability?.kind) ||
@@ -248,6 +251,10 @@ export function validateReceipt(receipt, expected) {
       typeof capability?.source !== 'string' || capability.source === '' ||
       !CAPABILITY_STATUSES.has(capability?.status))) {
     throw new Error('Probe receipt platform or capabilities do not match the schema');
+  }
+  if (receipt.status !== 'ISOLATION_VIOLATION' &&
+    receipt.status !== expectedStatusForCapabilities(receipt.capabilities)) {
+    throw new Error('Probe receipt status does not match capability outcomes');
   }
   if (!hasExactIsolation(receipt, expected.isolation)) {
     throw new Error('Probe receipt isolation does not match the expected boundary');
@@ -440,6 +447,9 @@ async function runStrict(options, io, dependencies) {
   const runProcess = dependencies.runProcess ?? runRealProcess;
   const read = dependencies.readFile ?? readFile;
   const containerCwd = containerWorkspacePath(options.marketplaceRoot, options.cwd);
+  const strictPlatform = `${dependencies.platform ?? process.platform}-${
+    dependencies.architecture ?? process.arch
+  }`;
   const isolation = await createIsolation({
     targetRoot: options.marketplaceRoot,
     receiptPath: options.output,
@@ -475,7 +485,7 @@ async function runStrict(options, io, dependencies) {
       codexVersion: options.codexVersion,
       plugin: options.plugin,
       sourceRoot: '/workspace',
-      platformOs: 'linux',
+      platform: strictPlatform,
       isolation: {
         mode: 'env',
         network: 'not_enforced',

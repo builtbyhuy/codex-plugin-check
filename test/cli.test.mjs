@@ -57,6 +57,21 @@ function receiptFor(fixture, status = 'PASS', isolation = {
   network: 'not_enforced',
   hostState: 'not_enforced'
 }) {
+  const capabilities = status === 'FAIL'
+    ? [{
+        kind: 'skill',
+        key: 'sample:missing',
+        source: 'plugin/read + skills/list',
+        status: 'MISSING'
+      }]
+    : status === 'INCONCLUSIVE'
+      ? [{
+          kind: 'skill',
+          key: 'sample:unobservable',
+          source: 'plugin/read',
+          status: 'UNOBSERVABLE'
+        }]
+      : [];
   return {
     schemaVersion: '0.1.0',
     status,
@@ -67,23 +82,38 @@ function receiptFor(fixture, status = 'PASS', isolation = {
       marketplace: 'local-marketplace',
       sourceRoot: fixture.marketplaceRoot
     },
-    capabilities: [],
+    capabilities,
     isolation
   };
 }
 
 function stagedReceipt(status = 'PASS', overrides = {}) {
+  const capabilities = status === 'FAIL'
+    ? [{
+        kind: 'skill',
+        key: 'sample:missing',
+        source: 'plugin/read + skills/list',
+        status: 'MISSING'
+      }]
+    : status === 'INCONCLUSIVE'
+      ? [{
+          kind: 'skill',
+          key: 'sample:unobservable',
+          source: 'plugin/read',
+          status: 'UNOBSERVABLE'
+        }]
+      : [];
   return {
     schemaVersion: '0.1.0',
     status,
     codexVersion: '0.147.0',
-    platform: 'linux-x64',
+    platform: `linux-${process.arch}`,
     plugin: {
       name: 'sample',
       marketplace: 'local-marketplace',
       sourceRoot: '/workspace'
     },
-    capabilities: [],
+    capabilities,
     isolation: {
       mode: 'env',
       network: 'not_enforced',
@@ -293,6 +323,102 @@ test('env mode returns stable conformance codes and quiet suppresses only the su
   }
 });
 
+test('env mode rejects run statuses that disagree with capability outcomes', async (t) => {
+  const { main } = await import('../src/cli.mjs');
+  const cases = [
+    {
+      label: 'PASS with MISSING',
+      status: 'PASS',
+      capability: {
+        kind: 'skill',
+        key: 'sample:missing',
+        source: 'plugin/read + skills/list',
+        status: 'MISSING'
+      }
+    },
+    {
+      label: 'PASS with UNOBSERVABLE',
+      status: 'PASS',
+      capability: {
+        kind: 'hook',
+        key: 'sample:unobservable',
+        source: 'plugin/read',
+        status: 'UNOBSERVABLE'
+      }
+    },
+    {
+      label: 'FAIL without MISSING',
+      status: 'FAIL',
+      capability: {
+        kind: 'skill',
+        key: 'sample:effective',
+        source: 'plugin/read + skills/list',
+        status: 'DISCOVERED_EFFECTIVE'
+      }
+    },
+    {
+      label: 'INCONCLUSIVE without UNOBSERVABLE',
+      status: 'INCONCLUSIVE',
+      capability: {
+        kind: 'mcp',
+        key: 'sample-mcp',
+        source: 'plugin/read',
+        status: 'DECLARED_ONLY'
+      }
+    }
+  ];
+
+  for (const { label, status, capability } of cases) {
+    const fixture = await makeFixture(t);
+    const capture = captureIo();
+    const receipt = {
+      ...receiptFor(fixture, status),
+      capabilities: [capability]
+    };
+    const code = await main(requiredArgs(fixture), capture.io, {
+      runProcess: async () => ({ code: 0, stdout: '0.147.0\n', stderr: '' }),
+      checkPlugin: async () => receipt
+    });
+
+    assert.equal(code, 2, label);
+    assert.match(capture.stderr(), /status.*capabilit/i, label);
+    assert.doesNotMatch(capture.stdout(), /PASS|success/i, label);
+    await assert.rejects(access(fixture.output), { code: 'ENOENT' });
+  }
+});
+
+test('env mode accepts declaration-only and untrusted capabilities as PASS evidence', async (t) => {
+  const { main } = await import('../src/cli.mjs');
+  const fixture = await makeFixture(t);
+  const receipt = {
+    ...receiptFor(fixture),
+    capabilities: [
+      {
+        kind: 'hook',
+        key: 'sample:untrusted',
+        source: 'plugin/read + hooks/list',
+        status: 'DISCOVERED_UNTRUSTED'
+      },
+      {
+        kind: 'mcp',
+        key: 'sample-mcp',
+        source: 'plugin/read',
+        status: 'DECLARED_ONLY'
+      }
+    ]
+  };
+  const capture = captureIo();
+
+  const code = await main(requiredArgs(fixture), capture.io, {
+    runProcess: async () => ({ code: 0, stdout: '0.147.0\n', stderr: '' }),
+    checkPlugin: async () => receipt
+  });
+
+  assert.equal(code, 0);
+  assert.equal(JSON.parse(await readFile(fixture.output, 'utf8')).status, 'PASS');
+  assert.equal(capture.stderr(), '');
+});
+
 test('Codex version mismatch is a tool error before env probing or receipt writing', async (t) => {
   const { main } = await import('../src/cli.mjs');
   const fixture = await makeFixture(t);
@@ -489,6 +615,27 @@ test('strict mode rejects child status and exit-code disagreement after running 
   assert.equal(code, 2);
   assert.deepEqual(harness.events, ['create', 'wrap', 'child', 'integrity', 'cleanup']);
   assert.match(capture.stderr(), /status.*exit code.*disagree/i);
+  assert.doesNotMatch(capture.stdout(), /PASS|success/i);
+  await assert.rejects(access(fixture.output), { code: 'ENOENT' });
+});
+
+test('strict mode rejects a staged platform not matching the runtime architecture', async (t) => {
+  const { main } = await import('../src/cli.mjs');
+  const fixture = await makeFixture(t);
+  const harness = await strictHarness(fixture, {
+    receipt: stagedReceipt('PASS', { platform: 'linux-fake' })
+  });
+  const capture = captureIo();
+
+  const code = await main(
+    requiredArgs(fixture, { '--isolation': 'strict' }),
+    capture.io,
+    harness.dependencies
+  );
+
+  assert.equal(code, 2);
+  assert.deepEqual(harness.events, ['create', 'wrap', 'child', 'integrity', 'cleanup']);
+  assert.match(capture.stderr(), /platform/i);
   assert.doesNotMatch(capture.stdout(), /PASS|success/i);
   await assert.rejects(access(fixture.output), { code: 'ENOENT' });
 });
