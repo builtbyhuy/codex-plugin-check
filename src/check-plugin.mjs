@@ -30,6 +30,17 @@ function validInstall(value, pluginName) {
       .every((key) => typeof value[key] === 'string' && value[key] !== '');
 }
 
+function marketplaceFrom(value, marketplaceRoot) {
+  const matches = value !== null && typeof value === 'object' && !Array.isArray(value) &&
+    typeof value.marketplaceName === 'string' && value.marketplaceName !== '' &&
+    typeof value.installedRoot === 'string' && value.installedRoot !== '' &&
+    path.resolve(value.installedRoot) === path.resolve(marketplaceRoot);
+  if (!matches) {
+    throw new Error('Codex marketplace add returned invalid marketplace JSON');
+  }
+  return value;
+}
+
 function installedPluginFrom(list, install, marketplaceRoot) {
   const installed = Array.isArray(list?.installed)
     ? list.installed.find((item) => item?.pluginId === install.pluginId)
@@ -39,7 +50,7 @@ function installedPluginFrom(list, install, marketplaceRoot) {
     installed.version === install.version &&
     installed.installed === true && installed.enabled === true &&
     installed.source?.source === 'local' &&
-    path.resolve(installed.source.path ?? '') === path.resolve(install.installedPath) &&
+    pathIsWithin(installed.source.path, marketplaceRoot) &&
     installed.marketplaceSource?.sourceType === 'local' &&
     path.resolve(installed.marketplaceSource.source ?? '') === path.resolve(marketplaceRoot);
   if (!matches) {
@@ -52,6 +63,19 @@ function pathIsWithin(candidate, root) {
   if (typeof candidate !== 'string' || typeof root !== 'string') return false;
   const relative = path.relative(path.resolve(root), path.resolve(candidate));
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+function validatePluginReadIdentity(plugin, install, installed, marketplacePath) {
+  const matches = plugin?.summary?.id === install.pluginId &&
+    plugin.summary.name === install.name &&
+    plugin.marketplaceName === install.marketplaceName &&
+    path.resolve(plugin.marketplacePath ?? '') === marketplacePath &&
+    plugin.summary.source?.type === 'local' &&
+    path.resolve(plugin.summary.source.path ?? '') === path.resolve(installed.source.path) &&
+    plugin.summary.installed === true && plugin.summary.enabled === true;
+  if (!matches) {
+    throw new Error('Codex plugin/read evidence does not match the installed plugin');
+  }
 }
 
 export async function checkPlugin(options, dependencies = {}) {
@@ -75,13 +99,21 @@ export async function checkPlugin(options, dependencies = {}) {
       cwd: options.cwd ?? options.marketplaceRoot,
       env: isolation.env
     });
-    await runCommand(invocation(['plugin', 'marketplace', 'add', options.marketplaceRoot]));
-    const install = JSON.parse((await runCommand(invocation(['plugin', 'add', options.plugin, '--json']))).stdout);
-    if (!validInstall(install, options.plugin)) {
+    const marketplace = marketplaceFrom(
+      JSON.parse((await runCommand(invocation([
+        'plugin', 'marketplace', 'add', options.marketplaceRoot, '--json'
+      ]))).stdout),
+      options.marketplaceRoot
+    );
+    const install = JSON.parse((await runCommand(invocation([
+      'plugin', 'add', options.plugin, '--marketplace', marketplace.marketplaceName, '--json'
+    ]))).stdout);
+    if (!validInstall(install, options.plugin) ||
+      install.marketplaceName !== marketplace.marketplaceName) {
       throw new Error('Codex plugin add returned invalid install JSON');
     }
     const list = JSON.parse((await runCommand(invocation(['plugin', 'list', '--json']))).stdout);
-    installedPluginFrom(list, install, options.marketplaceRoot);
+    const installed = installedPluginFrom(list, install, options.marketplaceRoot);
     client = await startAppServer({
       command: options.codex ?? 'codex',
       args: ['app-server', '--stdio', '--disable', 'remote_plugin'],
@@ -90,12 +122,25 @@ export async function checkPlugin(options, dependencies = {}) {
       timeoutMs: options.timeoutMs ?? 30_000
     });
     await client.initialize();
-    const pluginResult = await client.request('plugin/read', { pluginName: options.plugin, marketplacePath: options.marketplaceRoot });
-    const skillsResult = await client.request('skills/list', { cwds: [options.cwd ?? options.marketplaceRoot], forceReload: true });
-    const hooksResult = await client.request('hooks/list', { cwds: [options.cwd ?? options.marketplaceRoot] });
+    const marketplacePath = path.join(
+      path.resolve(options.marketplaceRoot), '.agents', 'plugins', 'marketplace.json'
+    );
+    const pluginResult = await client.request('plugin/read', {
+      pluginName: options.plugin,
+      marketplacePath
+    });
+    validatePluginReadIdentity(pluginResult?.plugin, install, installed, marketplacePath);
+    const skillsResult = await client.request('skills/list', {
+      cwds: [options.marketplaceRoot],
+      forceReload: true
+    });
+    const hooksResult = await client.request('hooks/list', { cwds: [options.marketplaceRoot] });
     const declaredSkills = Array.isArray(pluginResult?.plugin?.skills) ? pluginResult.plugin.skills : [];
     const effectiveSkills = Array.isArray(skillsResult?.data)
-      ? skillsResult.data.flatMap((entry) => Array.isArray(entry?.skills) ? entry.skills : [])
+      ? skillsResult.data
+        .flatMap((entry) => Array.isArray(entry?.skills) ? entry.skills : [])
+        .filter((skill) => skill?.enabled === true &&
+          pathIsWithin(skill.path, install.installedPath))
       : [];
     const declaredHooks = Array.isArray(pluginResult?.plugin?.hooks) ? pluginResult.plugin.hooks : [];
     const declaredApps = Array.isArray(pluginResult?.plugin?.apps) ? pluginResult.plugin.apps : [];
@@ -103,8 +148,9 @@ export async function checkPlugin(options, dependencies = {}) {
     const effectiveHooks = Array.isArray(hooksResult?.data)
       ? hooksResult.data
         .flatMap((entry) => Array.isArray(entry?.hooks) ? entry.hooks : [])
-        .filter((hook) => hook?.source === 'plugin' &&
-          (hook.pluginId === install.pluginId || pathIsWithin(hook.sourcePath, install.installedPath)))
+        .filter((hook) => hook?.enabled === true && hook.source === 'plugin' &&
+          hook.pluginId === install.pluginId &&
+          pathIsWithin(hook.sourcePath, install.installedPath))
       : [];
     result = buildReceipt({
       codexVersion: options.codexVersion,
@@ -120,7 +166,7 @@ export async function checkPlugin(options, dependencies = {}) {
       isolation: {
         mode: options.isolation ?? 'env',
         network: options.isolation === 'strict' ? 'denied' : 'not_enforced',
-        hostState: 'denied'
+        hostState: options.isolation === 'strict' ? 'denied' : 'not_enforced'
       }
     });
   } catch (cause) {

@@ -6,17 +6,24 @@ import { checkPlugin } from '../src/check-plugin.mjs';
 
 const fixtureRoot = fileURLToPath(new URL('./fixtures/marketplace', import.meta.url));
 const pluginRoot = path.join(fixtureRoot, 'plugins', 'sample');
+const manifestPath = path.join(fixtureRoot, '.agents', 'plugins', 'marketplace.json');
+const installedRoot = '/isolated/codex-home/plugins/cache/local-marketplace/sample/1.0.0';
 const pluginId = 'sample@local-marketplace';
 const env = { HOME: '/isolated/home', PATH: '/test/bin' };
 
 function successfulResponses() {
   return {
+    marketplace: {
+      marketplaceName: 'local-marketplace',
+      installedRoot: fixtureRoot,
+      alreadyAdded: false
+    },
     install: {
       pluginId,
       name: 'sample',
       marketplaceName: 'local-marketplace',
       version: '1.0.0',
-      installedPath: pluginRoot,
+      installedPath: installedRoot,
       authPolicy: 'ON_USE'
     },
     list: {
@@ -45,9 +52,9 @@ function successfulResponses() {
           installPolicy: 'AVAILABLE'
         },
         marketplaceName: 'local-marketplace',
-        marketplacePath: fixtureRoot,
-        skills: [{ name: 'sample-skill', description: 'Sample', enabled: true, path: path.join(pluginRoot, 'skills', 'sample-skill') }],
-        hooks: [{ key: 'sample-hook', eventName: 'sessionStart' }],
+        marketplacePath: manifestPath,
+        skills: [{ name: 'sample:sample-skill', description: 'Sample', enabled: true, path: path.join(pluginRoot, 'skills', 'sample-skill', 'SKILL.md') }],
+        hooks: [{ key: 'sample@local-marketplace:hooks/hooks.json:session_start:0:0', eventName: 'sessionStart' }],
         mcpServers: ['sample-mcp'],
         apps: [{ id: 'sample-app', name: 'Sample App' }],
         appTemplates: []
@@ -56,7 +63,7 @@ function successfulResponses() {
     skills: {
       data: [
         { cwd: fixtureRoot, errors: [], skills: [] },
-        { cwd: fixtureRoot, errors: [], skills: [{ name: 'sample-skill', description: 'Sample', enabled: true, path: path.join(pluginRoot, 'skills', 'sample-skill'), scope: 'repo' }] }
+        { cwd: fixtureRoot, errors: [], skills: [{ name: 'sample:sample-skill', description: 'Sample', enabled: true, path: path.join(installedRoot, 'skills', 'sample-skill'), scope: 'repo' }] }
       ]
     },
     hooks: {
@@ -65,8 +72,8 @@ function successfulResponses() {
         errors: [],
         warnings: [],
         hooks: [{
-          key: 'sample-hook', eventName: 'sessionStart', source: 'plugin',
-          sourcePath: path.join(pluginRoot, 'hooks', 'hooks.json'), pluginId,
+          key: 'sample@local-marketplace:hooks/hooks.json:session_start:0:0', eventName: 'sessionStart', source: 'plugin',
+          sourcePath: path.join(installedRoot, 'hooks', 'hooks.json'), pluginId,
           trustStatus: 'trusted', enabled: true, handlerType: 'command',
           command: 'nonexistent-sample-hook', currentHash: 'abc', displayOrder: 0,
           isManaged: false, matcher: null, statusMessage: null, timeoutSec: 10
@@ -81,24 +88,36 @@ function harness(overrides = {}, failures = {}) {
   const commands = [];
   const requests = [];
   const lifecycle = [];
+  const events = [];
   let commandIndex = 0;
-  const commandOutputs = ['', JSON.stringify(responses.install), JSON.stringify(responses.list)];
+  const commandOutputs = [
+    JSON.stringify(responses.marketplace),
+    JSON.stringify(responses.install),
+    JSON.stringify(responses.list)
+  ];
   const dependencies = {
     runCommand: async (invocation) => {
       commands.push(invocation);
+      events.push(['command', invocation]);
       return { stdout: commandOutputs[commandIndex++], stderr: '' };
     },
     startAppServer: async (options) => {
       lifecycle.push(['start', options]);
+      events.push(['start']);
       return {
-        initialize: async () => lifecycle.push(['initialize']),
+        initialize: async () => {
+          lifecycle.push(['initialize']);
+          events.push(['initialize']);
+        },
         request: async (method, params) => {
           requests.push([method, params]);
+          events.push(['request', method, params]);
           if (method === failures.requestMethod) throw new Error('primary request failure');
           return { 'plugin/read': responses.plugin, 'skills/list': responses.skills, 'hooks/list': responses.hooks }[method];
         },
         close: async () => {
           lifecycle.push(['close']);
+          events.push(['close']);
           if (failures.close) throw new Error('close failure');
         }
       };
@@ -110,16 +129,18 @@ function harness(overrides = {}, failures = {}) {
         wrap() { throw new Error('checkPlugin must use direct commands'); },
         async assertCheckoutUnchanged() {
           lifecycle.push(['assertCheckoutUnchanged']);
+          events.push(['assertCheckoutUnchanged']);
           if (failures.assert) throw new Error('assert failure');
         },
         async cleanup() {
           lifecycle.push(['cleanup']);
+          events.push(['cleanup']);
           if (failures.cleanup) throw new Error('cleanup failure');
         }
       };
     }
   };
-  return { commands, dependencies, lifecycle, requests };
+  return { commands, dependencies, events, lifecycle, requests };
 }
 
 const options = {
@@ -127,7 +148,7 @@ const options = {
   plugin: 'sample',
   codex: '/opt/codex',
   codexVersion: '0.147.0',
-  cwd: fixtureRoot,
+  cwd: '/different/workspace',
   output: 'receipt.json',
   isolation: 'env',
   platform: 'darwin',
@@ -138,15 +159,18 @@ test('runs the exact Codex command and app-server discovery sequence', async () 
   const observed = harness();
   const receipt = await checkPlugin(options, observed.dependencies);
 
-  assert.deepEqual(observed.commands, [
-    { command: '/opt/codex', args: ['plugin', 'marketplace', 'add', fixtureRoot], cwd: fixtureRoot, env },
-    { command: '/opt/codex', args: ['plugin', 'add', 'sample', '--json'], cwd: fixtureRoot, env },
-    { command: '/opt/codex', args: ['plugin', 'list', '--json'], cwd: fixtureRoot, env }
-  ]);
-  assert.deepEqual(observed.requests, [
-    ['plugin/read', { pluginName: 'sample', marketplacePath: fixtureRoot }],
-    ['skills/list', { cwds: [fixtureRoot], forceReload: true }],
-    ['hooks/list', { cwds: [fixtureRoot] }]
+  assert.deepEqual(observed.events, [
+    ['command', { command: '/opt/codex', args: ['plugin', 'marketplace', 'add', fixtureRoot, '--json'], cwd: '/different/workspace', env }],
+    ['command', { command: '/opt/codex', args: ['plugin', 'add', 'sample', '--marketplace', 'local-marketplace', '--json'], cwd: '/different/workspace', env }],
+    ['command', { command: '/opt/codex', args: ['plugin', 'list', '--json'], cwd: '/different/workspace', env }],
+    ['start'],
+    ['initialize'],
+    ['request', 'plugin/read', { pluginName: 'sample', marketplacePath: manifestPath }],
+    ['request', 'skills/list', { cwds: [fixtureRoot], forceReload: true }],
+    ['request', 'hooks/list', { cwds: [fixtureRoot] }],
+    ['close'],
+    ['assertCheckoutUnchanged'],
+    ['cleanup']
   ]);
   assert.equal(receipt.status, 'PASS');
   assert.deepEqual(receipt.plugin, { name: 'sample', marketplace: 'local-marketplace', sourceRoot: fixtureRoot });
@@ -168,6 +192,25 @@ test('rejects install JSON that lacks Codex-owned install evidence', async () =>
   ]);
 });
 
+test('rejects marketplace JSON that points at a different installed root', async () => {
+  const observed = harness({
+    marketplace: {
+      marketplaceName: 'local-marketplace',
+      installedRoot: '/different/marketplace',
+      alreadyAdded: false
+    }
+  });
+
+  await assert.rejects(
+    checkPlugin(options, observed.dependencies),
+    /Codex marketplace add returned invalid marketplace JSON/
+  );
+  assert.equal(observed.commands.length, 1);
+  assert.deepEqual(observed.lifecycle.slice(-2).map(([name]) => name), [
+    'assertCheckoutUnchanged', 'cleanup'
+  ]);
+});
+
 test('rejects a plugin list source that does not identify the requested checkout', async () => {
   const responses = successfulResponses();
   responses.list.installed[0].marketplaceSource.source = '/different/checkout';
@@ -180,6 +223,60 @@ test('rejects a plugin list source that does not identify the requested checkout
   assert.equal(observed.lifecycle.some(([name]) => name === 'start'), false);
 });
 
+test('rejects plugin/read identity that disagrees with CLI evidence', async () => {
+  for (const mutate of [
+    (plugin) => { plugin.summary.id = 'different@local-marketplace'; },
+    (plugin) => { plugin.summary.name = 'different'; },
+    (plugin) => { plugin.marketplaceName = 'different-marketplace'; }
+  ]) {
+    const responses = successfulResponses();
+    mutate(responses.plugin.plugin);
+    const observed = harness({ plugin: responses.plugin });
+    await assert.rejects(
+      checkPlugin(options, observed.dependencies),
+      /plugin\/read evidence does not match the installed plugin/
+    );
+  }
+});
+
+test('rejects plugin/read when Codex does not report installed and enabled', async () => {
+  for (const field of ['installed', 'enabled']) {
+    const responses = successfulResponses();
+    responses.plugin.plugin.summary[field] = false;
+    const observed = harness({ plugin: responses.plugin });
+    await assert.rejects(
+      checkPlugin(options, observed.dependencies),
+      /plugin\/read evidence does not match the installed plugin/
+    );
+  }
+});
+
+test('rejects plugin/read for a different marketplace manifest path', async () => {
+  const responses = successfulResponses();
+  responses.plugin.plugin.marketplacePath = path.join(fixtureRoot, 'marketplace.json');
+  const observed = harness({ plugin: responses.plugin });
+
+  await assert.rejects(
+    checkPlugin(options, observed.dependencies),
+    /plugin\/read evidence does not match the installed plugin/
+  );
+});
+
+test('rejects plugin/read source that disagrees with the listed checkout source', async () => {
+  for (const source of [
+    { type: 'git', path: pluginRoot },
+    { type: 'local', path: path.join(fixtureRoot, 'plugins', 'different') }
+  ]) {
+    const responses = successfulResponses();
+    responses.plugin.plugin.summary.source = source;
+    const observed = harness({ plugin: responses.plugin });
+    await assert.rejects(
+      checkPlugin(options, observed.dependencies),
+      /plugin\/read evidence does not match the installed plugin/
+    );
+  }
+});
+
 test('marks a declared skill missing when no skills/list entry exposes it', async () => {
   const observed = harness({ skills: { data: [{ cwd: fixtureRoot, errors: [], skills: [] }] } });
 
@@ -187,13 +284,34 @@ test('marks a declared skill missing when no skills/list entry exposes it', asyn
 
   assert.equal(receipt.status, 'FAIL');
   assert.deepEqual(receipt.capabilities.find(({ kind }) => kind === 'skill'), {
-    kind: 'skill', key: 'sample-skill', source: 'plugin/read + skills/list', status: 'MISSING'
+    kind: 'skill', key: 'sample:sample-skill', source: 'plugin/read + skills/list', status: 'MISSING'
+  });
+});
+
+test('does not let an unrelated same-name skill satisfy plugin discovery', async () => {
+  const responses = successfulResponses();
+  responses.skills.data = [{
+    cwd: fixtureRoot,
+    errors: [],
+    skills: [{
+      name: 'sample:sample-skill',
+      description: 'Unrelated',
+      enabled: true,
+      path: '/unrelated/cache/sample-skill/SKILL.md',
+      scope: 'user'
+    }]
+  }];
+  const observed = harness({ skills: responses.skills });
+
+  const receipt = await checkPlugin(options, observed.dependencies);
+
+  assert.deepEqual(receipt.capabilities.find(({ kind }) => kind === 'skill'), {
+    kind: 'skill', key: 'sample:sample-skill', source: 'plugin/read + skills/list', status: 'MISSING'
   });
 });
 
 test('keeps a matching untrusted plugin hook distinct without executing it', async () => {
   const responses = successfulResponses();
-  responses.hooks.data[0].hooks[0].pluginId = null;
   responses.hooks.data[0].hooks[0].trustStatus = 'untrusted';
   responses.hooks.data[0].hooks.unshift({
     ...responses.hooks.data[0].hooks[0],
@@ -206,10 +324,48 @@ test('keeps a matching untrusted plugin hook distinct without executing it', asy
   const receipt = await checkPlugin(options, observed.dependencies);
 
   assert.deepEqual(receipt.capabilities.find(({ kind }) => kind === 'hook'), {
-    kind: 'hook', key: 'sample-hook', source: 'plugin/read + hooks/list', status: 'DISCOVERED_UNTRUSTED'
+    kind: 'hook', key: 'sample@local-marketplace:hooks/hooks.json:session_start:0:0',
+    source: 'plugin/read + hooks/list', status: 'DISCOVERED_UNTRUSTED'
   });
   assert.equal(receipt.status, 'PASS');
   assert.equal(observed.commands.some(({ args }) => args.includes('nonexistent-sample-hook')), false);
+});
+
+test('requires exact plugin hook identity and an installed-cache source path', async () => {
+  const responses = successfulResponses();
+  const valid = responses.hooks.data[0].hooks[0];
+  responses.hooks.data[0].hooks = [
+    { ...valid, pluginId: 'different@local-marketplace' },
+    { ...valid, sourcePath: '/unrelated/cache/hooks/hooks.json' },
+    { ...valid, source: 'project' }
+  ];
+  const observed = harness({ hooks: responses.hooks });
+
+  const receipt = await checkPlugin(options, observed.dependencies);
+
+  assert.deepEqual(receipt.capabilities.find(({ kind }) => kind === 'hook'), {
+    kind: 'hook', key: 'sample@local-marketplace:hooks/hooks.json:session_start:0:0',
+    source: 'plugin/read + hooks/list', status: 'MISSING'
+  });
+});
+
+test('does not count disabled skill or hook registry entries as effective', async () => {
+  const responses = successfulResponses();
+  responses.skills.data[1].skills[0].enabled = false;
+  responses.hooks.data[0].hooks[0].enabled = false;
+  const observed = harness({ skills: responses.skills, hooks: responses.hooks });
+
+  const receipt = await checkPlugin(options, observed.dependencies);
+
+  assert.deepEqual(
+    receipt.capabilities
+      .filter(({ kind }) => kind === 'skill' || kind === 'hook')
+      .map(({ kind, status }) => ({ kind, status })),
+    [
+      { kind: 'hook', status: 'MISSING' },
+      { kind: 'skill', status: 'MISSING' }
+    ]
+  );
 });
 
 test('reports app and MCP declarations as declared-only without runtime calls', async () => {
@@ -222,6 +378,16 @@ test('reports app and MCP declarations as declared-only without runtime calls', 
     { kind: 'mcp', key: 'sample-mcp', source: 'plugin/read', status: 'DECLARED_ONLY' }
   ]);
   assert.deepEqual(observed.requests.map(([method]) => method), ['plugin/read', 'skills/list', 'hooks/list']);
+});
+
+test('does not claim network or host-state enforcement in env mode', async () => {
+  const observed = harness();
+
+  const receipt = await checkPlugin(options, observed.dependencies);
+
+  assert.deepEqual(receipt.isolation, {
+    mode: 'env', network: 'not_enforced', hostState: 'not_enforced'
+  });
 });
 
 test('preserves the primary failure while attempting every finalizer', async () => {
