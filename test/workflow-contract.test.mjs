@@ -141,3 +141,57 @@ test('strict workflow lets the falsifier exclusively create its evidence directo
     []
   );
 });
+
+test('public fixture matrix runs only from trusted main pushes or manual dispatch', async () => {
+  const source = await workflow('public-fixtures.yml');
+
+  assert.deepEqual(mappingKeys(section(source, 'on'), 2), ['push', 'workflow_dispatch']);
+  assert.deepEqual(section(source, 'permissions').filter((line) => line.trim()), [
+    '  contents: read'
+  ]);
+  assert.match(source, /^    runs-on: ubuntu-24\.04$/mu);
+  assert.match(source, /^    timeout-minutes: 60$/mu);
+  assert.match(source, /^          node-version: 24\.19\.0$/mu);
+  assert.match(source, /^      CODEX_CURRENT_VERSION: 0\.147\.0$/mu);
+  assert.match(source, /^      CODEX_PRIOR_VERSION: 0\.146\.1$/mu);
+  assert.match(
+    source,
+    /^      CODEX_PUBLIC_FIXTURE_OUTPUT_ROOT: artifacts\/public-fixtures$/mu
+  );
+  assert.doesNotMatch(source, /^\s*pull_request:/mu);
+  assert.doesNotMatch(source, /^\s*run: npm test$/mu);
+  assert.equal(source.match(/^\s*run: npm run falsify:public$/gmu)?.length, 1);
+  assert.equal(
+    scalar(stepUsing(source, CHECKOUT).source, 'persist-credentials', 10),
+    'false'
+  );
+  assert.ok(stepUsing(source, SETUP_NODE));
+  const upload = stepUsing(source, UPLOAD);
+  assert.equal(scalar(upload.source, 'path', 10), 'artifacts/public-fixtures');
+  assert.equal(scalar(upload.source, 'if-no-files-found', 10), 'error');
+  assert.equal(scalar(upload.source, 'retention-days', 10), '90');
+  assert.ok(upload.source.includes('        if: always()'));
+  assert.deepEqual(
+    steps(source).filter((step) => step.source.some((line) => line.includes('uses:'))).length,
+    3
+  );
+});
+
+test('public fixture runner exclusively creates its evidence directory', async () => {
+  const source = await workflow('public-fixtures.yml');
+  const workflowSteps = steps(source);
+  const runnerIndex = workflowSteps.findIndex((step) => (
+    step.source.includes('        run: npm run falsify:public')
+  ));
+
+  assert.notEqual(runnerIndex, -1);
+  assert.deepEqual(
+    workflowSteps
+      .slice(0, runnerIndex)
+      .filter((step) => step.source.some((line) => (
+        line.includes('artifacts/public-fixtures')
+      )))
+      .map((step) => step.name),
+    []
+  );
+});

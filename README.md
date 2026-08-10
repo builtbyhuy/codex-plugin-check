@@ -31,11 +31,13 @@ about their effective runtime behavior.
 
 ## No-execution boundary
 
-The probe never sends a model request and never executes plugin hooks, MCP
-servers, plugin scripts, apps, or authentication flows. It disables remote
+The checker never sends a model request or asks Codex to execute plugin hooks,
+MCP servers, plugin scripts, apps, or authentication flows. It disables remote
 plugin discovery and does not mount personal Codex or agent state into strict
-mode. Synthetic hook and MCP commands are execution sentinels: if Codex starts
-either command during the falsifier, the run fails before isolation cleanup.
+mode. In the exact synthetic fixture, hook and MCP commands are execution
+sentinels: if Codex starts either command during the falsifier, the run fails
+before isolation cleanup. Third-party fixture checks rely on this bounded API
+path and do not claim universal per-fixture execution tracing.
 
 Network access is permitted only while Docker prepares an image containing the
 exact released Codex package. The complete strict probe then runs once with
@@ -60,9 +62,11 @@ release reference exists while the repository is on HOLD. Once the release
 gates pass, consumers should pin the Action to a reviewed full commit SHA—not a
 floating branch or tag.
 
-Action inputs mirror the CLI: `marketplace-root`, `plugin`, `codex-version`,
-`codex`, `cwd`, `output`, and `isolation`. The outputs are `status`, the full
-`receipt`, and the observed `codex-version`.
+Action inputs cover the general check: `marketplace-root`, `plugin`,
+`codex-version`, `codex`, `cwd`, `output`, and `isolation`. The fixed public
+matrix additionally uses CLI-only `expected-plugin-root` and
+`expected-plugin-version` gates. Action outputs are `status`, the full receipt,
+and the observed `codex-version`.
 
 ## CLI diagnostic example
 

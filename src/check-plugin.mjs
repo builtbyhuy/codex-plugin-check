@@ -1,9 +1,11 @@
 import { spawn } from 'node:child_process';
-import { realpath } from 'node:fs/promises';
+import { readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { AppServerClient } from './app-server-client.mjs';
 import { createIsolation as createRealIsolation } from './isolation.mjs';
 import { buildReceipt } from './receipt.mjs';
+
+const EXACT_PLUGIN_VERSION = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 
 function runRealCommand({ command, args, cwd, env }) {
   return new Promise((resolve, reject) => {
@@ -42,7 +44,7 @@ function marketplaceFrom(value, marketplaceRoot) {
   return value;
 }
 
-function installedPluginFrom(list, install, marketplaceRoot) {
+function installedPluginFrom(list, install, marketplaceRoot, expectedPlugin) {
   const installed = Array.isArray(list?.installed)
     ? list.installed.find((item) => item?.pluginId === install.pluginId)
     : undefined;
@@ -52,6 +54,8 @@ function installedPluginFrom(list, install, marketplaceRoot) {
     installed.installed === true && installed.enabled === true &&
     installed.source?.source === 'local' &&
     pathIsWithin(installed.source.path, marketplaceRoot) &&
+    (expectedPlugin === null ||
+      path.resolve(installed.source.path) === expectedPlugin.root) &&
     installed.marketplaceSource?.sourceType === 'local' &&
     path.resolve(installed.marketplaceSource.source ?? '') === path.resolve(marketplaceRoot);
   if (!matches) {
@@ -60,10 +64,76 @@ function installedPluginFrom(list, install, marketplaceRoot) {
   return installed;
 }
 
+async function expectedPluginFrom(options, marketplaceRoot) {
+  const hasRoot = options.expectedPluginRoot !== undefined;
+  const hasVersion = options.expectedPluginVersion !== undefined;
+  if (!hasRoot && !hasVersion) return null;
+  if (
+    !hasRoot ||
+    !hasVersion ||
+    typeof options.expectedPluginRoot !== 'string' ||
+    options.expectedPluginRoot === '' ||
+    typeof options.expectedPluginVersion !== 'string' ||
+    !EXACT_PLUGIN_VERSION.test(options.expectedPluginVersion)
+  ) {
+    throw new Error('Expected plugin root and version must be supplied together');
+  }
+  const root = await realpath(path.resolve(options.expectedPluginRoot));
+  if (!pathIsWithin(root, marketplaceRoot)) {
+    throw new Error('Expected plugin root escaped the requested marketplace');
+  }
+  return { root, version: options.expectedPluginVersion };
+}
+
 function pathIsWithin(candidate, root) {
   if (typeof candidate !== 'string' || typeof root !== 'string') return false;
   const relative = path.relative(path.resolve(root), path.resolve(candidate));
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+export async function resolveMarketplaceManifestPath(
+  marketplaceRoot,
+  marketplaceName,
+  dependencies = {}
+) {
+  const read = dependencies.readFile ?? readFile;
+  const canonicalize = dependencies.realpath ?? realpath;
+  const inspect = dependencies.stat ?? stat;
+  const canonicalRoot = await canonicalize(marketplaceRoot);
+  // Keep this order aligned with core-plugins/src/marketplace.rs in Codex.
+  for (const relativePath of [
+    path.join('.agents', 'plugins', 'marketplace.json'),
+    path.join('.agents', 'plugins', 'api_marketplace.json'),
+    path.join('.claude-plugin', 'marketplace.json'),
+    path.join('.cursor-plugin', 'marketplace.json')
+  ]) {
+    const candidate = path.join(canonicalRoot, relativePath);
+    let canonicalPath;
+    try {
+      canonicalPath = await canonicalize(candidate);
+    } catch (cause) {
+      if (cause?.code === 'ENOENT' || cause?.code === 'ENOTDIR') continue;
+      throw cause;
+    }
+    if (!pathIsWithin(canonicalPath, canonicalRoot)) {
+      throw new Error('Marketplace manifest escaped the marketplace root');
+    }
+    if (!(await inspect(canonicalPath)).isFile()) continue;
+    let manifest;
+    try {
+      manifest = JSON.parse(await read(canonicalPath, 'utf8'));
+    } catch (cause) {
+      if (cause instanceof SyntaxError) {
+        throw new Error('Selected marketplace manifest was not valid JSON');
+      }
+      throw cause;
+    }
+    if (manifest?.name !== marketplaceName) {
+      throw new Error('Selected marketplace manifest identity did not match Codex marketplace output');
+    }
+    return canonicalPath;
+  }
+  throw new Error(`No marketplace manifest matched ${marketplaceName}`);
 }
 
 function validatePluginReadIdentity(plugin, install, installed, marketplacePath) {
@@ -88,6 +158,7 @@ export async function checkPlugin(options, dependencies = {}) {
   const startAppServer = dependencies.startAppServer ?? AppServerClient.start;
   const makeIsolation = dependencies.createIsolation ?? createRealIsolation;
   const marketplaceRoot = await realpath(path.resolve(options.marketplaceRoot));
+  const expectedPlugin = await expectedPluginFrom(options, marketplaceRoot);
   const isolation = await makeIsolation({
     targetRoot: marketplaceRoot,
     receiptPath: options.output ?? 'conformance.json',
@@ -111,6 +182,12 @@ export async function checkPlugin(options, dependencies = {}) {
       ]))).stdout),
       marketplaceRoot
     );
+    const findMarketplaceManifest = dependencies.resolveMarketplaceManifestPath ??
+      resolveMarketplaceManifestPath;
+    const marketplacePath = await findMarketplaceManifest(
+      marketplaceRoot,
+      marketplace.marketplaceName
+    );
     const install = JSON.parse((await runCommand(invocation([
       'plugin', 'add', options.plugin, '--marketplace', marketplace.marketplaceName, '--json'
     ]))).stdout);
@@ -118,8 +195,11 @@ export async function checkPlugin(options, dependencies = {}) {
       install.marketplaceName !== marketplace.marketplaceName) {
       throw new Error('Codex plugin add returned invalid install JSON');
     }
+    if (expectedPlugin !== null && install.version !== expectedPlugin.version) {
+      throw new Error('Codex installed a different plugin version than expected');
+    }
     const list = JSON.parse((await runCommand(invocation(['plugin', 'list', '--json']))).stdout);
-    const installed = installedPluginFrom(list, install, marketplaceRoot);
+    const installed = installedPluginFrom(list, install, marketplaceRoot, expectedPlugin);
     client = await startAppServer({
       command: options.codex ?? 'codex',
       args: ['app-server', '--stdio', '--disable', 'remote_plugin'],
@@ -128,9 +208,6 @@ export async function checkPlugin(options, dependencies = {}) {
       timeoutMs: options.timeoutMs ?? 30_000
     });
     await client.initialize();
-    const marketplacePath = path.join(
-      marketplaceRoot, '.agents', 'plugins', 'marketplace.json'
-    );
     const pluginResult = await client.request('plugin/read', {
       pluginName: options.plugin,
       marketplacePath

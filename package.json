@@ -13,6 +13,7 @@
   },
   "scripts": {
     "falsify": "node scripts/falsify-released-codex.mjs",
+    "falsify:public": "node scripts/falsify-public-fixtures.mjs",
     "test": "node --test"
   }
 }
