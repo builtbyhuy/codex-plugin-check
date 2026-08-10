@@ -5,11 +5,12 @@ for checking how a released Codex binary sees one local plugin checkout. It
 produces a deterministic JSON receipt from Codex-owned install, declaration,
 skill-registry, and hook-registry responses.
 
-This repository is in pre-release validation. The current project decision is
-**HOLD for adoption/application claims**: the bounded synthetic falsifier and
-the ten-public-fixture strict matrix have passed private Linux CI (`10/10`
-fixtures, `20/20` cells), but no public immutable release or independent use
-exists yet. There is no adoption or production-readiness claim.
+`v0.1.0` is the first experimental release. The bounded synthetic falsifier
+and ten-public-fixture strict matrix passed Linux CI (`10/10` fixtures,
+`20/20` cells). The project remains **HOLD for adoption and Codex for Open
+Source application claims** because no independent run, retained downstream
+workflow, or public maintenance history exists yet. This is not a
+production-readiness claim.
 
 ## What the receipt proves
 
@@ -58,10 +59,37 @@ back to `env`. macOS and Windows currently have no strict implementation.
 ## GitHub Action distribution
 
 The JavaScript Action in [`action.yml`](action.yml) is the intended primary
-distribution surface and uses the Node 24 Action runtime. No public immutable
-release reference exists while the repository is on HOLD. Once the release
-gates pass, consumers should pin the Action to a reviewed full commit SHA—not a
-floating branch or tag.
+distribution surface and uses the Node 24 Action runtime. The
+[`v0.1.0` release](https://github.com/builtbyhuy/codex-plugin-check/releases/tag/v0.1.0)
+contains the sanitized strict-matrix receipts and summary. Pin the Action to a
+reviewed full commit SHA, not a floating branch or tag. The SHA below is the
+exact code tree exercised by the 20-cell public fixture matrix:
+
+```yaml
+jobs:
+  codex-plugin-discovery:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Check out plugin source without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Check released Codex discovery
+        id: codex-plugin-check
+        uses: builtbyhuy/codex-plugin-check@3285a65bab2ba805665c6be4e4349874fc7be417
+        with:
+          marketplace-root: .
+          plugin: your-plugin-name
+          codex-version: 0.147.0
+          isolation: strict
+```
+
+Strict mode requires an Ubuntu/Linux runner with Docker and writes the default
+sanitized receipt to `conformance.json`. Replace the plugin name and, when the
+marketplace manifest is below the repository root, `marketplace-root`.
 
 Action inputs cover the general check: `marketplace-root`, `plugin`,
 `codex-version`, `codex`, `cwd`, `output`, and `isolation`. The fixed public
@@ -149,7 +177,7 @@ It runs positive and deliberately disabled-skill lanes for both versions and
 writes an evidence ledger. That bounded artifact remains `HOLD` because it does
 not ingest the separate public-fixture result. The current project ledger links
 the independently reconciled public matrix `PASS` (`10/10`, `20/20`) while
-retaining `HOLD` for publication history, adoption and application readiness.
+retaining `HOLD` for adoption and application readiness.
 See [`docs/evidence/technical-falsifier.md`](docs/evidence/technical-falsifier.md)
 and [`docs/evidence/public-fixture-matrix.md`](docs/evidence/public-fixture-matrix.md)
 for the two evidence boundaries.
