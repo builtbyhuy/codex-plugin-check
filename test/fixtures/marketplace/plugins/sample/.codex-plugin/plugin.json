@@ -1,0 +1,16 @@
+{
+  "name": "sample",
+  "version": "1.0.0",
+  "description": "Synthetic plugin used by the orchestration tests.",
+  "author": {
+    "name": "codex-plugin-check"
+  },
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json",
+  "mcpServers": {
+    "sample-mcp": {
+      "type": "stdio",
+      "command": "nonexistent-sample-mcp"
+    }
+  }
+}

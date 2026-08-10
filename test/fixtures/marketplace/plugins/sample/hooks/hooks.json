@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "sessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "nonexistent-sample-hook"
+          }
+        ]
+      }
+    ]
+  }
+}
