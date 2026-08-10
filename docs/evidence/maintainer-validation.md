@@ -2,10 +2,10 @@
 
 ## Decision
 
-`HOLD — 0 contacts, 0 independent runs, 0 retained workflows, 0 unknown
-defects`. The technical fixture matrix is complete, but no maintainer has been
-contacted and no external outcome exists. A prepared row is not a send, reply,
-run, integration, adoption signal, or endorsement.
+`HOLD — 2 public contacts, 0 maintainer replies, 0 independent runs, 0 retained
+workflows, 0 unknown defects`. The technical fixture matrix and first bounded
+contact cohort are complete, but no external outcome exists. A sent message is
+not a reply, run, integration, adoption signal, or endorsement.
 
 The machine-readable ledger is
 [`maintainer-validation.csv`](maintainer-validation.csv). Blank outcome fields
@@ -13,25 +13,27 @@ mean unobserved, not false or unsuccessful.
 
 Repository activity, workflow, and contact-route evidence was checked on
 `2026-08-10` from the repositories' own README/contribution files and GitHub
-metadata. Re-check each route immediately before any send.
+metadata. Both selected routes were re-checked immediately before sending.
 
 ## Qualified first cohort
 
 The initial cohort contains only repositories with both an active public CI
 workflow and a project-owned public route that explicitly accommodates this
-kind of discussion. Contact remains blocked until the public `v0.1.0` release
-and immutable evidence asset exist.
+kind of discussion. Each message was sent only after the public `v0.1.0`
+release and durable, SHA-256-bound evidence asset were anonymously reachable.
 
 | Repository | Existing public workflow | Maintainer route | Status |
 | --- | --- | --- | --- |
-| [`bitrouter/bitrouter`](https://github.com/bitrouter/bitrouter) | [`CI`](https://github.com/bitrouter/bitrouter/blob/main/.github/workflows/ci.yml) | [Discussions](https://github.com/bitrouter/bitrouter/discussions) | `READY_AFTER_PUBLIC_RELEASE` |
-| [`Cassette-Editor/oh-my-cassette`](https://github.com/Cassette-Editor/oh-my-cassette) | [`CI`](https://github.com/Cassette-Editor/oh-my-cassette/blob/main/.github/workflows/ci.yml) | [Discussions](https://github.com/Cassette-Editor/oh-my-cassette/discussions) | `READY_AFTER_PUBLIC_RELEASE` |
+| [`bitrouter/bitrouter`](https://github.com/bitrouter/bitrouter) | [`CI`](https://github.com/bitrouter/bitrouter/blob/main/.github/workflows/ci.yml) | [Discussion #805](https://github.com/orgs/bitrouter/discussions/805) | `SENT_AWAITING_RESPONSE` |
+| [`Cassette-Editor/oh-my-cassette`](https://github.com/Cassette-Editor/oh-my-cassette) | [`CI`](https://github.com/Cassette-Editor/oh-my-cassette/blob/main/.github/workflows/ci.yml) | [Discussion #71](https://github.com/Cassette-Editor/oh-my-cassette/discussions/71) | `SENT_AWAITING_RESPONSE` |
 
 `bitrouter` also publishes a project email for open-source builders and
 integrations, but Discussions is the preferred first contact because it keeps
 the request and any reply publicly linkable. `oh-my-cassette` explicitly
 routes questions, sharing, and plans to Discussions while reserving Issues for
-bugs and feature requests.
+bugs and feature requests. GitHub recorded the two messages from `builtbyhuy`
+at `2026-08-10T13:26:00Z` and `2026-08-10T13:26:15Z`, respectively. No reply
+or external run was present when this ledger was written.
 
 ## Screened but not in the first cohort
 
@@ -52,9 +54,8 @@ workflow target, maintainer route, and concrete evidence payload.
 
 ## Exact first-contact payload
 
-Replace every bracketed field and re-check the target project's current
-contact guidance immediately before sending. Send at most one public message
-per repository.
+The sent messages followed this contract after every bracketed field and route
+was re-checked. Send at most one public message per repository.
 
 ```text
 Hi — I maintain Codex Plugin Check, an experimental GitHub Action that asks a
@@ -74,7 +75,8 @@ maintenance workflow, no action is needed.
 ```
 
 The repository-specific message must include the exact tested commit from the
-[public fixture matrix](public-fixture-matrix.md), the immutable release URL,
+[public fixture matrix](public-fixture-matrix.md), the durable release URL and
+asset digest,
 the exact `DIRECT` or adapter preparation, and a full-SHA Action pin. The
 `oh-my-cassette` message must say that `STATIC_ADAPTER:local-source-v1` changed
 only `/plugins/0/source` from its immutable expected input to the audited local

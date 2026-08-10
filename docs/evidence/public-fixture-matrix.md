@@ -149,10 +149,12 @@ observed:
 
 ## Publication gate
 
-The technical gate is `PASS`. Before the public release is final, attach the
-sanitized receipts and summary as a durable release asset rather than relying
-only on the 90-day Actions artifact. A code-`1` receipt must remain plain
-`FAIL`/`HOLD`; it cannot establish a version or API incompatibility without
-separate causal evidence. This result supports publication of the tool, but it
+The technical and durable-publication gates are `PASS`. The
+[`v0.1.0` release](https://github.com/builtbyhuy/codex-plugin-check/releases/tag/v0.1.0)
+retains the 20 sanitized receipts and summary as
+`codex-plugin-check-public-fixture-evidence-v0.1.0.zip` with SHA-256
+`3bcec67f5e1c3833bc5de684b1be6a7aa46859dd326cb9a776eeaf9b774b06f7`.
+A code-`1` receipt must remain plain `FAIL`/`HOLD`; it cannot establish a
+version or API incompatibility without separate causal evidence. Publication
 does not satisfy the independent-use or ongoing-maintainer gates for a Codex
 for Open Source application.

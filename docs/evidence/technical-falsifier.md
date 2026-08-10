@@ -18,7 +18,7 @@ strict cells. The bounded command must still report `status: "HOLD"` with
 | Strict Linux boundary | `PASS` | Private GitHub Actions run on `ubuntu-24.04` |
 | Strict positive and negative lanes | `PASS` | Four exact receipts across both released versions |
 | Public fixture specification matrix | `PASS` | Separate reconciled ledger: `10/10`, `20/20` |
-| Publication | `HOLD` | Repository remains private until the reviewed release evidence is durable |
+| Publication | `PASS` | [v0.1.0](https://github.com/builtbyhuy/codex-plugin-check/releases/tag/v0.1.0) with durable sanitized evidence asset |
 
 ## Version and variant contract
 
@@ -176,5 +176,5 @@ Artifact SHA-256 values:
 This closes the bounded synthetic strict-Linux uncertainty. The later
 [public fixture matrix](public-fixture-matrix.md) also closes the technical
 `10/10` compatibility gate. The project remains `HOLD` for adoption and Codex
-for Open Source application claims until public release and maintenance
-evidence exist.
+for Open Source application claims until independent use and sustained public
+maintenance evidence exist.
