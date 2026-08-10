@@ -8,6 +8,7 @@ import test from 'node:test';
 
 import {
   CURRENT_CODEX_VERSION,
+  falsifierOptionsFromEnvironment,
   PRIOR_CODEX_VERSION,
   runFalsifier,
   validateBoundaryReport,
@@ -132,6 +133,30 @@ test('falsifier requires the exact current and prior released Codex versions bef
   assert.equal(PRIOR_CODEX_VERSION, '0.146.1');
 });
 
+test('falsifier accepts only a safe repo-relative deterministic evidence root', () => {
+  const environment = {
+    ...EXACT_ENV,
+    CODEX_FALSIFIER_OUTPUT_ROOT: 'artifacts/released-codex'
+  };
+
+  assert.deepEqual(
+    falsifierOptionsFromEnvironment(environment, '/checkout'),
+    {
+      env: environment,
+      outputRoot: '/checkout/artifacts/released-codex'
+    }
+  );
+  for (const unsafe of ['/tmp/evidence', '../evidence', 'artifacts/../../evidence']) {
+    assert.throws(
+      () => falsifierOptionsFromEnvironment({
+        ...EXACT_ENV,
+        CODEX_FALSIFIER_OUTPUT_ROOT: unsafe
+      }, '/checkout'),
+      /relative evidence directory/i
+    );
+  }
+});
+
 test('injected orchestration audits the boundary and validates both receipts without changing checkout', async (t) => {
   const outputRoot = await temporaryDirectory(t, 'released-codex-output-');
   const fixtureRoot = await temporaryDirectory(t, 'released-codex-fixture-');
@@ -199,6 +224,26 @@ test('injected orchestration audits the boundary and validates both receipts wit
       assert.equal(JSON.parse(await readFile(receiptPath, 'utf8')).codexVersion, version);
     }
   }
+  const evidenceSummary = JSON.parse(await readFile(
+    path.join(outputRoot, 'falsifier-summary.json'),
+    'utf8'
+  ));
+  assert.equal(evidenceSummary.outputRoot, '.');
+  assert.deepEqual(
+    [...evidenceSummary.versions, ...evidenceSummary.negativeVersions]
+      .map(({ receiptPath }) => receiptPath),
+    [
+      'codex-0.147.0-positive.json',
+      'codex-0.146.1-positive.json',
+      'codex-0.147.0-negative.json',
+      'codex-0.146.1-negative.json'
+    ]
+  );
+  assert.equal(
+    JSON.stringify(evidenceSummary).includes(outputRoot),
+    false,
+    'uploaded summary must not contain an absolute host evidence path'
+  );
 });
 
 test('positive probe rejects hook or MCP execution sentinels before isolation cleanup', async (t) => {

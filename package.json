@@ -1,7 +1,9 @@
 {
   "name": "codex-plugin-check",
   "version": "0.1.0",
+  "description": "Experimental evidence-first GitHub Action for released Codex plugin discovery.",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "bin": {
     "codex-plugin-check": "./src/cli.mjs"

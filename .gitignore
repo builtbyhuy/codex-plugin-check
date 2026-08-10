@@ -2,6 +2,16 @@
 node_modules/
 coverage/
 conformance.json
+artifacts/
+*.log
+*.tgz
+.env
+.env.*
+.npmrc
+.netrc
+*.key
+*.pem
+*.p12
+*.pfx
 .superpowers/
 .codex-plugin-check/
-

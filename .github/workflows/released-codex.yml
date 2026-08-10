@@ -1,0 +1,60 @@
+name: Released Codex falsifier
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/released-codex.yml
+      - .dockerignore
+      - Dockerfile
+      - package.json
+      - scripts/**
+      - src/**
+      - test/fixtures/marketplace/**
+      - test/released-codex.test.mjs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: released-codex-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  strict-released:
+    name: Strict Linux released binaries
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CODEX_CURRENT_VERSION: 0.147.0
+      CODEX_PRIOR_VERSION: 0.146.1
+      CODEX_FALSIFIER_OUTPUT_ROOT: artifacts/released-codex
+    steps:
+      - name: Check out source without credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Set up Node 24
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24.19.0
+
+      - name: Prepare deterministic evidence directory
+        run: install -d -m 0700 artifacts/released-codex
+
+      - name: Falsify exact released Codex discovery
+        run: npm run falsify
+
+      - name: Upload released-Codex evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: released-codex-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/released-codex
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 9
+          include-hidden-files: false

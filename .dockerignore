@@ -1,0 +1,35 @@
+# The strict image only installs an exact released Codex package. Runtime tool
+# source is mounted read-only, so no repository or developer material belongs
+# in the Docker build context.
+.git
+.git/**
+.github
+.superpowers
+node_modules
+coverage
+artifacts
+.codex-plugin-check
+conformance.json
+*.log
+*.tgz
+.env
+.env.*
+**/.env
+**/.env.*
+**/.npmrc
+**/.netrc
+**/*credential*
+**/*credentials*
+**/*.key
+**/*.pem
+**/*.p12
+**/*.pfx
+**/id_rsa*
+**/id_ed25519*
+test
+docs
+
+# No Dockerfile COPY instruction needs repository content. Keep only the build
+# recipe in the transferred context.
+**
+!Dockerfile

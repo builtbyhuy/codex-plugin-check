@@ -42,6 +42,25 @@ function requiredVersions(env) {
   return [CURRENT_CODEX_VERSION, PRIOR_CODEX_VERSION];
 }
 
+export function falsifierOptionsFromEnvironment(env = process.env, cwd = process.cwd()) {
+  const requested = env.CODEX_FALSIFIER_OUTPUT_ROOT;
+  if (requested === undefined) return { env };
+  const baseDirectory = path.resolve(cwd);
+  const outputRoot = path.resolve(baseDirectory, requested);
+  const relative = path.relative(baseDirectory, outputRoot);
+  if (
+    requested.trim() === '' ||
+    path.isAbsolute(requested) ||
+    relative === '' ||
+    relative === '..' ||
+    relative.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relative)
+  ) {
+    throw new Error('CODEX_FALSIFIER_OUTPUT_ROOT must name a relative evidence directory');
+  }
+  return { env, outputRoot };
+}
+
 function appendOutput(chunks, chunk, state) {
   const value = Buffer.from(chunk);
   state.bytes += value.length;
@@ -613,10 +632,11 @@ export async function runFalsifier(options = {}, dependencies = {}) {
   const ownsOutputRoot = options.outputRoot === undefined;
   const makeOutputRoot = dependencies.makeOutputRoot ?? (async () =>
     mkdtemp(path.join(await realpath(os.tmpdir()), 'codex-plugin-falsifier-')));
-  const outputRoot = await realpath(options.outputRoot
+  const requestedOutputRoot = options.outputRoot
     ? path.resolve(options.outputRoot)
-    : await makeOutputRoot());
-  await mkdir(outputRoot, { recursive: true });
+    : await makeOutputRoot();
+  await mkdir(requestedOutputRoot, { recursive: true, mode: 0o700 });
+  const outputRoot = await realpath(requestedOutputRoot);
   try {
     const hashCheckout = dependencies.hashCheckout ?? hashCheckoutReal;
     const auditBoundary = dependencies.auditBoundary ?? auditStrictBoundary;
@@ -698,9 +718,23 @@ export async function runFalsifier(options = {}, dependencies = {}) {
         receiptPath
       }))
     };
+    const evidenceSummary = {
+      ...summary,
+      outputRoot: '.',
+      versions: summary.versions.map(({ version, durationMs, receiptPath }) => ({
+        version,
+        durationMs,
+        receiptPath: path.basename(receiptPath)
+      })),
+      negativeVersions: summary.negativeVersions.map(({ version, durationMs, receiptPath }) => ({
+        version,
+        durationMs,
+        receiptPath: path.basename(receiptPath)
+      }))
+    };
     await writeFile(
       path.join(outputRoot, 'falsifier-summary.json'),
-      `${JSON.stringify(summary, null, 2)}\n`,
+      `${JSON.stringify(evidenceSummary, null, 2)}\n`,
       { flag: 'wx', mode: 0o600 }
     );
     return { ...summary, versions: runs, negativeVersions: negativeRuns };
@@ -726,7 +760,7 @@ function isEntrypoint() {
 
 if (isEntrypoint()) {
   try {
-    const result = await runFalsifier();
+    const result = await runFalsifier(falsifierOptionsFromEnvironment(process.env));
     process.stdout.write(`${JSON.stringify({
       status: result.status,
       boundedFalsifier: result.boundedFalsifier,

@@ -112,10 +112,10 @@ does not enforce network or host-state denial and therefore cannot satisfy the
 strict gate.
 
 `node --test test/check-plugin.test.mjs test/released-codex.test.mjs` observed
-32 passing tests, zero failures, and one real strict test skipped with the
+33 passing tests, zero failures, and one real strict test skipped with the
 explicit reason `strict Linux Docker unavailable on darwin-arm64`.
 
-The complete `npm test` suite observed 113 passing tests, zero failures, and
+The complete `npm test` suite observed 119 passing tests, zero failures, and
 the same one strict Linux test skipped.
 
 With both exact version variables set, `npm run falsify` exited `1` with:

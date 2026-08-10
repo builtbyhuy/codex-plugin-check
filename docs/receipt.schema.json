@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:codex-plugin-check:receipt:0.1.0",
+  "title": "Codex Plugin Check receipt",
+  "description": "A deterministic Codex-owned plugin declaration and discovery receipt.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "status",
+    "codexVersion",
+    "platform",
+    "plugin",
+    "capabilities",
+    "isolation"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "0.1.0"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "PASS",
+        "FAIL",
+        "INCONCLUSIVE",
+        "ISOLATION_VIOLATION"
+      ]
+    },
+    "codexVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "platform": {
+      "type": "string",
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9._-]+$"
+    },
+    "plugin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "marketplace",
+        "sourceRoot"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "marketplace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceRoot": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "key",
+          "source",
+          "status"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "skill",
+              "hook",
+              "mcp",
+              "app"
+            ]
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "plugin/read",
+              "plugin/read + skills/list",
+              "plugin/read + hooks/list"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DISCOVERED_EFFECTIVE",
+              "DISCOVERED_UNTRUSTED",
+              "DECLARED_ONLY",
+              "UNOBSERVABLE",
+              "MISSING"
+            ]
+          }
+        }
+      }
+    },
+    "isolation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "network",
+        "hostState"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "strict",
+            "env"
+          ]
+        },
+        "network": {
+          "type": "string",
+          "enum": [
+            "denied",
+            "not_enforced"
+          ]
+        },
+        "hostState": {
+          "type": "string",
+          "enum": [
+            "denied",
+            "not_enforced"
+          ]
+        }
+      }
+    }
+  }
+}
