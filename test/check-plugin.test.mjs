@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, rm, symlink } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkPlugin } from '../src/check-plugin.mjs';
@@ -47,6 +49,7 @@ function successfulResponses() {
           name: 'sample',
           installed: true,
           enabled: true,
+          localVersion: '1.0.0',
           source: { type: 'local', path: pluginRoot },
           authPolicy: 'ON_USE',
           installPolicy: 'AVAILABLE'
@@ -179,6 +182,41 @@ test('runs the exact Codex command and app-server discovery sequence', async () 
   ]);
 });
 
+test('canonicalizes a symlink marketplace root across every Codex boundary', async () => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), 'codex-plugin-check-symlink-'));
+  const linkedRoot = path.join(temporaryRoot, 'marketplace');
+  await symlink(fixtureRoot, linkedRoot, 'dir');
+  try {
+    const observed = harness();
+    const receipt = await checkPlugin(
+      { ...options, marketplaceRoot: linkedRoot, cwd: undefined },
+      observed.dependencies
+    );
+
+    assert.deepEqual(observed.lifecycle[0], ['isolation', {
+      targetRoot: fixtureRoot,
+      receiptPath: 'receipt.json',
+      mode: 'env',
+      platform: 'darwin',
+      codexVersion: '0.147.0'
+    }]);
+    assert.deepEqual(observed.commands.map(({ args, cwd }) => ({ args, cwd })), [
+      { args: ['plugin', 'marketplace', 'add', fixtureRoot, '--json'], cwd: fixtureRoot },
+      { args: ['plugin', 'add', 'sample', '--marketplace', 'local-marketplace', '--json'], cwd: fixtureRoot },
+      { args: ['plugin', 'list', '--json'], cwd: fixtureRoot }
+    ]);
+    assert.equal(observed.lifecycle.find(([name]) => name === 'start')[1].cwd, fixtureRoot);
+    assert.deepEqual(observed.requests, [
+      ['plugin/read', { pluginName: 'sample', marketplacePath: manifestPath }],
+      ['skills/list', { cwds: [fixtureRoot], forceReload: true }],
+      ['hooks/list', { cwds: [fixtureRoot] }]
+    ]);
+    assert.equal(receipt.plugin.sourceRoot, fixtureRoot);
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
 test('rejects install JSON that lacks Codex-owned install evidence', async () => {
   const observed = harness({ install: { name: 'sample', marketplaceName: 'local-marketplace' } });
 
@@ -275,6 +313,17 @@ test('rejects plugin/read source that disagrees with the listed checkout source'
       /plugin\/read evidence does not match the installed plugin/
     );
   }
+});
+
+test('rejects plugin/read local version that disagrees with install evidence', async () => {
+  const responses = successfulResponses();
+  responses.plugin.plugin.summary.localVersion = '2.0.0';
+  const observed = harness({ plugin: responses.plugin });
+
+  await assert.rejects(
+    checkPlugin(options, observed.dependencies),
+    /plugin\/read evidence does not match the installed plugin/
+  );
 });
 
 test('marks a declared skill missing when no skills/list entry exposes it', async () => {
@@ -388,6 +437,21 @@ test('does not claim network or host-state enforcement in env mode', async () =>
   assert.deepEqual(receipt.isolation, {
     mode: 'env', network: 'not_enforced', hostState: 'not_enforced'
   });
+});
+
+test('rejects strict mode before isolation or process dependencies can run', async () => {
+  const calls = [];
+  const dependencies = {
+    createIsolation: async () => { calls.push('createIsolation'); },
+    runCommand: async () => { calls.push('runCommand'); },
+    startAppServer: async () => { calls.push('startAppServer'); }
+  };
+
+  await assert.rejects(
+    checkPlugin({ ...options, isolation: 'strict' }, dependencies),
+    /checkPlugin only supports env isolation/
+  );
+  assert.deepEqual(calls, []);
 });
 
 test('preserves the primary failure while attempting every finalizer', async () => {

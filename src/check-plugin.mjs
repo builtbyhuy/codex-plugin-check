@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { AppServerClient } from './app-server-client.mjs';
 import { createIsolation as createRealIsolation } from './isolation.mjs';
@@ -69,6 +70,7 @@ function validatePluginReadIdentity(plugin, install, installed, marketplacePath)
   const matches = plugin?.summary?.id === install.pluginId &&
     plugin.summary.name === install.name &&
     plugin.marketplaceName === install.marketplaceName &&
+    plugin.summary.localVersion === install.version &&
     path.resolve(plugin.marketplacePath ?? '') === marketplacePath &&
     plugin.summary.source?.type === 'local' &&
     path.resolve(plugin.summary.source.path ?? '') === path.resolve(installed.source.path) &&
@@ -79,11 +81,15 @@ function validatePluginReadIdentity(plugin, install, installed, marketplacePath)
 }
 
 export async function checkPlugin(options, dependencies = {}) {
+  if ((options.isolation ?? 'env') !== 'env') {
+    throw new Error('checkPlugin only supports env isolation');
+  }
   const runCommand = dependencies.runCommand ?? runRealCommand;
   const startAppServer = dependencies.startAppServer ?? AppServerClient.start;
   const makeIsolation = dependencies.createIsolation ?? createRealIsolation;
+  const marketplaceRoot = await realpath(path.resolve(options.marketplaceRoot));
   const isolation = await makeIsolation({
-    targetRoot: options.marketplaceRoot,
+    targetRoot: marketplaceRoot,
     receiptPath: options.output ?? 'conformance.json',
     mode: options.isolation ?? 'env',
     platform: options.platform ?? process.platform,
@@ -96,14 +102,14 @@ export async function checkPlugin(options, dependencies = {}) {
     const invocation = (args) => ({
       command: options.codex ?? 'codex',
       args,
-      cwd: options.cwd ?? options.marketplaceRoot,
+      cwd: options.cwd ?? marketplaceRoot,
       env: isolation.env
     });
     const marketplace = marketplaceFrom(
       JSON.parse((await runCommand(invocation([
-        'plugin', 'marketplace', 'add', options.marketplaceRoot, '--json'
+        'plugin', 'marketplace', 'add', marketplaceRoot, '--json'
       ]))).stdout),
-      options.marketplaceRoot
+      marketplaceRoot
     );
     const install = JSON.parse((await runCommand(invocation([
       'plugin', 'add', options.plugin, '--marketplace', marketplace.marketplaceName, '--json'
@@ -113,17 +119,17 @@ export async function checkPlugin(options, dependencies = {}) {
       throw new Error('Codex plugin add returned invalid install JSON');
     }
     const list = JSON.parse((await runCommand(invocation(['plugin', 'list', '--json']))).stdout);
-    const installed = installedPluginFrom(list, install, options.marketplaceRoot);
+    const installed = installedPluginFrom(list, install, marketplaceRoot);
     client = await startAppServer({
       command: options.codex ?? 'codex',
       args: ['app-server', '--stdio', '--disable', 'remote_plugin'],
-      cwd: options.cwd ?? options.marketplaceRoot,
+      cwd: options.cwd ?? marketplaceRoot,
       env: isolation.env,
       timeoutMs: options.timeoutMs ?? 30_000
     });
     await client.initialize();
     const marketplacePath = path.join(
-      path.resolve(options.marketplaceRoot), '.agents', 'plugins', 'marketplace.json'
+      marketplaceRoot, '.agents', 'plugins', 'marketplace.json'
     );
     const pluginResult = await client.request('plugin/read', {
       pluginName: options.plugin,
@@ -131,10 +137,10 @@ export async function checkPlugin(options, dependencies = {}) {
     });
     validatePluginReadIdentity(pluginResult?.plugin, install, installed, marketplacePath);
     const skillsResult = await client.request('skills/list', {
-      cwds: [options.marketplaceRoot],
+      cwds: [marketplaceRoot],
       forceReload: true
     });
-    const hooksResult = await client.request('hooks/list', { cwds: [options.marketplaceRoot] });
+    const hooksResult = await client.request('hooks/list', { cwds: [marketplaceRoot] });
     const declaredSkills = Array.isArray(pluginResult?.plugin?.skills) ? pluginResult.plugin.skills : [];
     const effectiveSkills = Array.isArray(skillsResult?.data)
       ? skillsResult.data
@@ -155,7 +161,7 @@ export async function checkPlugin(options, dependencies = {}) {
     result = buildReceipt({
       codexVersion: options.codexVersion,
       platform: `${options.platform ?? process.platform}-${options.architecture ?? process.arch}`,
-      plugin: { name: options.plugin, marketplace: install.marketplaceName, sourceRoot: options.marketplaceRoot },
+      plugin: { name: options.plugin, marketplace: install.marketplaceName, sourceRoot: marketplaceRoot },
       declarations: {
         skills: declaredSkills,
         hooks: declaredHooks,
@@ -164,9 +170,9 @@ export async function checkPlugin(options, dependencies = {}) {
       },
       effective: { skills: effectiveSkills, hooks: effectiveHooks },
       isolation: {
-        mode: options.isolation ?? 'env',
-        network: options.isolation === 'strict' ? 'denied' : 'not_enforced',
-        hostState: options.isolation === 'strict' ? 'denied' : 'not_enforced'
+        mode: 'env',
+        network: 'not_enforced',
+        hostState: 'not_enforced'
       }
     });
   } catch (cause) {
