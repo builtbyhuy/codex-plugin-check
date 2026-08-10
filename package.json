@@ -10,6 +10,7 @@
     "node": ">=24"
   },
   "scripts": {
+    "falsify": "node scripts/falsify-released-codex.mjs",
     "test": "node --test"
   }
 }
