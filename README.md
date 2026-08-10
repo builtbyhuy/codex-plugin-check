@@ -5,12 +5,12 @@ for checking how a released Codex binary sees one local plugin checkout. It
 produces a deterministic JSON receipt from Codex-owned install, declaration,
 skill-registry, and hook-registry responses.
 
-`v0.1.0` is the first experimental release. The bounded synthetic falsifier
-and ten-public-fixture strict matrix passed Linux CI (`10/10` fixtures,
-`20/20` cells). The project remains **HOLD for adoption and Codex for Open
-Source application claims** because no independent run, retained downstream
-workflow, or public maintenance history exists yet. This is not a
-production-readiness claim.
+`v0.1.1` is the current experimental distribution release; `v0.1.0` remains
+the evidence-bearing release for the bounded synthetic falsifier and
+ten-public-fixture strict matrix (`10/10` fixtures, `20/20` cells). The project
+remains **HOLD for adoption and Codex for Open Source application claims**
+because no independent run, retained downstream workflow, or public
+maintenance history exists yet. This is not a production-readiness claim.
 
 ## What the receipt proves
 
@@ -61,9 +61,12 @@ back to `env`. macOS and Windows currently have no strict implementation.
 The JavaScript Action in [`action.yml`](action.yml) is the intended primary
 distribution surface and uses the Node 24 Action runtime. The
 [`v0.1.0` release](https://github.com/builtbyhuy/codex-plugin-check/releases/tag/v0.1.0)
-contains the sanitized strict-matrix receipts and summary. Pin the Action to a
-reviewed full commit SHA, not a floating branch or tag. The SHA below is the
-exact code tree exercised by the 20-cell public fixture matrix:
+contains the sanitized strict-matrix receipts and summary; the
+[`v0.1.1` release](https://github.com/builtbyhuy/codex-plugin-check/releases/tag/v0.1.1)
+adds GitHub Marketplace branding metadata without changing the evidence gates.
+Pin the Action to a reviewed full commit SHA, not a floating branch or tag. The
+SHA below is the exact code tree exercised by the 20-cell public fixture
+matrix:
 
 ```yaml
 jobs:
