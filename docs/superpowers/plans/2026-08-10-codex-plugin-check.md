@@ -373,14 +373,14 @@ git commit -m "feat: expose cli and github action"
   hashes the checkout before and after, and writes version-specific receipts
   under an owned temporary output directory.
 
-- [ ] **Step 1: Write the failing released-binary integration test**
+- [x] **Step 1: Write the failing released-binary integration test**
 
 The test skips only when Docker is absent and prints an explicit skip reason.
 With Docker present, it asserts both receipts
 contain the requested version, skill discovery, hook discovery/trust state, no
 personal plugin names, and a duration below 90 seconds.
 
-- [ ] **Step 2: Verify RED with prepared binaries**
+- [x] **Step 2: Verify RED with prepared binaries**
 
 Prepare released binaries into the strict images without touching user state,
 set `CODEX_CURRENT_VERSION=0.147.0` and `CODEX_PRIOR_VERSION=0.146.1`, then run:
@@ -390,7 +390,7 @@ set `CODEX_CURRENT_VERSION=0.147.0` and `CODEX_PRIOR_VERSION=0.146.1`, then run:
 Expected: FAIL on the first unimplemented or incorrect real-protocol behavior,
 with no user-state modification.
 
-- [ ] **Step 3: Implement only the compatibility changes required by observed released behavior**
+- [x] **Step 3: Implement only the compatibility changes required by observed released behavior**
 
 Do not loosen isolation or convert missing effective evidence into a pass. Record
 version-specific API differences in the evidence document.
@@ -406,7 +406,7 @@ unchanged; network and host-state denial observed; no plugin executable code
 run. If a hard gate fails, update the decision to `NO-BUILD` and stop before
 Task 7.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/falsify-released-codex.mjs test/released-codex.test.mjs docs/evidence/technical-falsifier.md package.json
