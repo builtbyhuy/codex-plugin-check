@@ -4,11 +4,13 @@
 
 `HOLD — NOT READY TO SUBMIT`.
 
-The repository is still private and there is no independent retained usage or
-public maintenance history yet. The technical strict-Linux and public-fixture
-gates now pass, but submitting now would establish only that Huy created and
-validated a project. It would not establish the usage, ecosystem importance,
-or ongoing maintainer responsibility that OpenAI asks applicants to explain.
+The repository and `v0.1.0` release are public, but there is no independent
+retained usage or sustained public maintenance history yet. The technical
+strict-Linux and public-fixture gates pass, and two bounded maintainer contacts
+have been sent, but submitting now would establish only that Huy created,
+validated and published a project. It would not establish the usage, ecosystem
+importance, or ongoing maintainer responsibility that OpenAI asks applicants
+to explain.
 
 OpenAI's current form says eligible applicants maintain active open-source
 projects and that reviewers consider meaningful usage, broad adoption or clear
@@ -20,18 +22,18 @@ Source: [Codex for Open Source](https://openai.com/form/codex-for-oss/).
 
 | Gate | Current state | Required evidence |
 | --- | --- | --- |
-| Public repository and profile | `HOLD` | Public GitHub profile and public repository URL |
+| Public repository and profile | `PASS` | [Public repository](https://github.com/builtbyhuy/codex-plugin-check) and profile |
 | Useful, bounded technical job | `PASS` | Real released-Codex loader evidence with no model/auth dependency |
-| Synthetic strict boundary | `PASS` | Private Linux receipts for both target releases |
+| Synthetic strict boundary | `PASS` | Publicly documented Linux receipts for both target releases |
 | Public-plugin compatibility | `PASS` | Reconciled 10-repository, 20-cell strict matrix |
 | Independent retained use | `0` | External repositories keep the workflow enabled |
 | Unknown regression caught | `1 local defect` | Publicly linkable regression/issue accepted or reproduced externally |
-| Releases | `0 public releases` | Maintained tagged releases and release notes |
+| Releases | `1 experimental release` | [v0.1.0](https://github.com/builtbyhuy/codex-plugin-check/releases/tag/v0.1.0); additional feedback-driven releases required |
 | Ongoing maintainer duties | `INSUFFICIENT` | Public issue triage, PR review and release work over time |
 | Application | `NOT SUBMITTED` | All required form fields bound to public evidence |
 
-The technical compatibility result is bound to the [reconciled private Linux
-run and artifact ledger](public-fixture-matrix.md#strict-linux-observation).
+The technical compatibility result is bound to the [reconciled Linux run and
+durable release asset ledger](public-fixture-matrix.md#strict-linux-observation).
 It is publication evidence, not usage or maintainer-role evidence.
 
 The local defect was real: an unmodified Claude-compatible marketplace loaded
@@ -78,10 +80,11 @@ local files.
 
 ## Next evidence-producing actions
 
-1. Publish the reviewed `v0.1.0` release with durable sanitized evidence.
+1. Monitor the two public maintainer Discussions; count only observed replies,
+   external runs, retained workflows and reproduced defects.
 2. Keep the application on hold while independent use and maintenance accrue.
-3. Offer a bounded integration to maintainers whose immutable fixtures were
-   tested; do not open promotional issues or claim endorsement.
+3. Prepare a repository-specific integration PR only if a maintainer requests
+   it or a concrete reproducible compatibility defect appears.
 4. Record retained workflows, maintainer replies, defects and release upkeep in
    the maintainer-validation ledger.
 5. Re-evaluate the internal submission gates monthly. A green local build or a

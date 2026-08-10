@@ -559,7 +559,7 @@ pool. Each row must bind to a public workflow and a public maintainer route.
 Draft one concise request asking the maintainer to run the pinned prerelease and
 report its receipt; do not claim endorsement or acceptance.
 
-- [ ] **Step 2: Send the bounded cohort and record receipts separately from outcomes**
+- [x] **Step 2: Send the bounded cohort and record receipts separately from outcomes**
 
 Use only public project channels suitable for tooling feedback. Record an
 external send only after observing the resulting URL or platform receipt.
