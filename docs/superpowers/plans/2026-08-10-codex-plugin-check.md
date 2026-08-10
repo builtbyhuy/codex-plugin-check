@@ -1,0 +1,478 @@
+# Codex Plugin Check Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Build and falsify a dependency-light GitHub Action and CLI that prove an exact local Codex plugin checkout is declared and effectively discovered by a released Codex binary without personal state, credentials, model calls, network access, or plugin execution.
+
+**Architecture:** A pure comparison layer turns Codex-owned declaration and registry responses into a deterministic receipt. A JSONL app-server client and command runner supply those responses. An OS isolation adapter wraps every real Codex process; the CLI and Node 24 GitHub Action are thin input/output adapters over the same orchestration function.
+
+**Tech Stack:** Node.js 24 ESM, Node built-in test runner, zero runtime dependencies, GitHub JavaScript Action metadata, released `@openai/codex` binaries, macOS `sandbox-exec` for local falsification, Linux container or namespace isolation for CI.
+
+## Global Constraints
+
+- Implement the approved specification at `docs/specs/2026-08-10-codex-plugin-check.md` verbatim where it defines names, statuses, exit codes, versions, and safety boundaries.
+- Apply strict TDD: every production behavior is preceded by a focused test observed failing for the intended reason.
+- Runtime dependencies remain zero; development dependencies are also avoided unless a release artifact cannot be produced with Node built-ins.
+- Never execute plugin hooks, MCP servers, plugin scripts, app authentication, or model requests.
+- Never read or edit credential files; child processes receive an allowlisted environment with credential variables removed.
+- Do not publish a public release until hard technical gates 1, 2, 4, 5, and 6 pass.
+- Do not contact maintainers until the technical receipt is reproducible; do not submit an application until the market and maintenance gates pass.
+
+---
+
+### Task 1: Receipt model and capability comparison
+
+**Files:**
+- Create: `package.json`
+- Create: `src/receipt.mjs`
+- Create: `test/receipt.test.mjs`
+
+**Interfaces:**
+- Produces: `buildReceipt({ codexVersion, platform, plugin, declarations, effective, isolation }) -> Receipt`
+- Produces: `evaluateCapability({ kind, key, declaration, effectiveMatch }) -> CapabilityResult`
+- Produces: `exitCodeForStatus(status) -> 0|1|2|3|4`
+- Consumes: plain JSON objects only; no filesystem or process access.
+
+- [ ] **Step 1: Create the package test command and write the failing receipt tests**
+
+```js
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { buildReceipt, exitCodeForStatus } from '../src/receipt.mjs';
+
+test('sorts capabilities and distinguishes untrusted discovery', () => {
+  const receipt = buildReceipt({
+    codexVersion: '0.147.0',
+    platform: 'darwin-arm64',
+    plugin: { name: 'sample', marketplace: 'local-marketplace', sourceRoot: '/workspace' },
+    declarations: {
+      skills: [{ name: 'zeta' }],
+      hooks: [{ key: 'alpha', eventName: 'stop' }],
+      mcpServers: ['server-a'],
+      apps: []
+    },
+    effective: {
+      skills: [{ name: 'zeta' }],
+      hooks: [{ key: 'alpha', trustStatus: 'untrusted' }]
+    },
+    isolation: { mode: 'strict', network: 'denied', hostState: 'denied' }
+  });
+
+  assert.deepEqual(receipt.capabilities.map(({ kind, key, status }) => ({ kind, key, status })), [
+    { kind: 'hook', key: 'alpha', status: 'DISCOVERED_UNTRUSTED' },
+    { kind: 'mcp', key: 'server-a', status: 'DECLARED_ONLY' },
+    { kind: 'skill', key: 'zeta', status: 'DISCOVERED_EFFECTIVE' }
+  ]);
+  assert.equal(receipt.status, 'PASS');
+});
+
+test('maps stable run statuses to exit codes', () => {
+  assert.deepEqual(['PASS', 'FAIL', 'TOOL_ERROR', 'INCONCLUSIVE', 'ISOLATION_VIOLATION'].map(exitCodeForStatus), [0, 1, 2, 3, 4]);
+});
+```
+
+- [ ] **Step 2: Run the focused test and record the expected module-not-found failure**
+
+Run: `node --test test/receipt.test.mjs`  
+Expected: FAIL because `src/receipt.mjs` does not exist.
+
+- [ ] **Step 3: Implement only the deterministic comparison and exit-code behavior**
+
+Implement normalization for `skills`, `hooks`, `mcpServers`, and `apps`; match
+skills by `name`, hooks by `key`, apps by `id`, and MCP servers by string key.
+Sort results by `kind` then `key`. Missing skill/hook discovery makes the run
+`FAIL`; an untrusted but discovered hook remains a passing discovery with its
+own capability status; declaration-only MCP/app records do not claim runtime
+behavior.
+
+- [ ] **Step 4: Run the focused test, then the whole suite**
+
+Run: `node --test test/receipt.test.mjs && npm test`  
+Expected: all tests pass with zero warnings.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add package.json src/receipt.mjs test/receipt.test.mjs
+git commit -m "feat: add deterministic conformance receipts"
+```
+
+### Task 2: JSONL app-server client
+
+**Files:**
+- Create: `src/app-server-client.mjs`
+- Create: `test/fixtures/fake-app-server.mjs`
+- Create: `test/app-server-client.test.mjs`
+
+**Interfaces:**
+- Produces: `AppServerClient.start({ command, args, cwd, env, timeoutMs })`
+- Produces methods: `initialize()`, `request(method, params)`, and `close()`.
+- `initialize()` sends client name `codex-plugin-check`, version from
+  `package.json`, `experimentalApi: true`, then an `initialized` notification.
+- Rejects duplicate response IDs, malformed JSONL, JSON-RPC errors, timeouts,
+  premature exit, and stderr larger than 64 KiB.
+
+- [ ] **Step 1: Write a fake real subprocess and failing protocol tests**
+
+The fake server reads JSON lines from stdin, returns an initialize result with
+`codexHome`, `platformFamily`, `platformOs`, and `userAgent`, returns fixture
+payloads for `plugin/read`, `skills/list`, and `hooks/list`, and can be switched
+by an argument to emit malformed JSON, a JSON-RPC error, or no response.
+
+Test observable behavior, including this happy-path assertion:
+
+```js
+const client = await AppServerClient.start({
+  command: process.execPath,
+  args: ['test/fixtures/fake-app-server.mjs', 'ok'],
+  cwd: process.cwd(),
+  env: process.env,
+  timeoutMs: 1_000
+});
+await client.initialize();
+const result = await client.request('plugin/read', { pluginName: 'sample' });
+assert.equal(result.plugin.summary.name, 'sample');
+await client.close();
+```
+
+- [ ] **Step 2: Verify RED**
+
+Run: `node --test test/app-server-client.test.mjs`  
+Expected: FAIL because `AppServerClient` is not implemented.
+
+- [ ] **Step 3: Implement the minimal line-buffered client**
+
+Use `node:child_process.spawn` and `node:readline`. Maintain a monotonic integer
+ID, a map of pending requests, one timeout per request, a bounded stderr buffer,
+and one idempotent shutdown path. Never interpret notifications as responses.
+
+- [ ] **Step 4: Verify GREEN and error branches**
+
+Run: `node --test test/app-server-client.test.mjs && npm test`  
+Expected: happy path, malformed line, RPC error, timeout, and premature-exit
+tests all pass without leaked child processes.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/app-server-client.mjs test/fixtures/fake-app-server.mjs test/app-server-client.test.mjs
+git commit -m "feat: add bounded app server client"
+```
+
+### Task 3: Owned state and child-environment isolation
+
+**Files:**
+- Create: `src/isolation.mjs`
+- Create: `test/isolation.test.mjs`
+
+**Interfaces:**
+- Produces: `createIsolation({ targetRoot, receiptPath, mode, platform }) -> IsolationContext`
+- `IsolationContext` exposes `root`, `env`, `wrap(command,args)`,
+  `assertCheckoutUnchanged()`, and `cleanup()`.
+- Strict macOS wrapping uses `/usr/bin/sandbox-exec -f <owned-profile>`.
+- `env` contains only the platform essentials plus explicit isolated path
+  variables; all variable names matching credential deny patterns are absent.
+
+- [ ] **Step 1: Write failing environment and profile tests**
+
+Use a synthetic parent environment containing `OPENAI_API_KEY`, `GH_TOKEN`,
+`NPM_TOKEN`, `SSH_AUTH_SOCK`, `HTTPS_PROXY`, and a harmless `PATH`. Assert the
+first five never enter the child environment, while `PATH` does. Assert
+`HOME`, `CODEX_HOME`, `TMPDIR`, and all XDG variables resolve beneath the owned
+root. Assert a generated macOS profile denies network and default access while
+allowing system runtime paths, the Codex executable subtree, the read-only
+target root, the owned root, and the explicit receipt parent.
+
+- [ ] **Step 2: Verify RED**
+
+Run: `node --test test/isolation.test.mjs`  
+Expected: FAIL because `src/isolation.mjs` does not exist.
+
+- [ ] **Step 3: Implement the smallest strict-isolation context**
+
+Hash every regular file and symlink target under the checkout before the run
+with SHA-256; ignore `.git` metadata only. Generate paths with
+`fs.mkdtemp(path.join(os.tmpdir(), 'codex-plugin-check-'))`. Cleanup must first
+resolve the owned root and refuse any path not beginning with that exact
+canonical prefix.
+
+- [ ] **Step 4: Verify GREEN, then run a real sandbox denial characterization**
+
+Run: `node --test test/isolation.test.mjs`  
+Then run a test child through the macOS wrapper that can read its owned canary
+but receives denial for a canary under the real home and for a loopback socket.
+Expected: both automated and characterization tests pass; denial is observable.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/isolation.mjs test/isolation.test.mjs
+git commit -m "feat: isolate codex probe state"
+```
+
+### Task 4: Codex install and discovery orchestration
+
+**Files:**
+- Create: `src/check-plugin.mjs`
+- Create: `test/fixtures/marketplace/.agents/plugins/marketplace.json`
+- Create: `test/fixtures/marketplace/plugins/sample/.codex-plugin/plugin.json`
+- Create: `test/fixtures/marketplace/plugins/sample/skills/sample-skill/SKILL.md`
+- Create: `test/fixtures/marketplace/plugins/sample/hooks/hooks.json`
+- Create: `test/check-plugin.test.mjs`
+
+**Interfaces:**
+- Produces: `checkPlugin(options, dependencies) -> Promise<Receipt>`.
+- Dependency boundary accepts `runCommand`, `startAppServer`, and
+  `createIsolation`; production defaults use the real implementations.
+- CLI sequence is exactly marketplace add, plugin add `--json`, plugin list
+  `--json`, then app-server requests.
+
+- [ ] **Step 1: Write failing orchestration tests with behavior-level fakes**
+
+Assert the exact command sequence and that the four app-server requests use:
+
+```js
+[
+  ['plugin/read', { pluginName: 'sample', marketplacePath: fixtureRoot }],
+  ['skills/list', { cwds: [fixtureRoot], forceReload: true }],
+  ['hooks/list', { cwds: [fixtureRoot] }],
+  ['app/list', { forceRefetch: false }]
+]
+```
+
+Add tests for failed install JSON, a source mismatch, a missing declared skill,
+an untrusted hook, and app/MCP declarations that remain `DECLARED_ONLY`.
+
+- [ ] **Step 2: Verify RED**
+
+Run: `node --test test/check-plugin.test.mjs`  
+Expected: FAIL because `checkPlugin` is absent.
+
+- [ ] **Step 3: Implement minimal orchestration**
+
+Do not parse the plugin manifest as product truth. Validate only Codex CLI JSON
+and Codex app-server responses. Normalize effective skills from every
+`SkillsListResponse.data[].skills` item and hooks from every
+`HooksListResponse.data[].hooks` item whose `source` is `plugin` and whose
+`pluginId` or source path identifies the installed plugin.
+
+- [ ] **Step 4: Verify GREEN and checkout integrity**
+
+Run: `node --test test/check-plugin.test.mjs && npm test`  
+Expected: all branches pass and the fixture checkout hash is unchanged.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/check-plugin.mjs test/fixtures/marketplace test/check-plugin.test.mjs
+git commit -m "feat: check codex plugin discovery"
+```
+
+### Task 5: CLI and GitHub Action adapters
+
+**Files:**
+- Create: `src/cli.mjs`
+- Create: `src/action.mjs`
+- Create: `action.yml`
+- Create: `test/cli.test.mjs`
+- Create: `test/action.test.mjs`
+
+**Interfaces:**
+- CLI exports `main(argv, io, dependencies) -> Promise<number>` for tests and
+  invokes it only when run as the entry point.
+- Action reads `INPUT_MARKETPLACE-ROOT`, `INPUT_PLUGIN`, `INPUT_CODEX`,
+  `INPUT_CWD`, `INPUT_OUTPUT`, and `INPUT_ISOLATION`; it writes GitHub command
+  output directly without `@actions/core`.
+- Action outputs: `status`, `receipt`, and `codex-version`.
+
+- [ ] **Step 1: Write failing CLI and Action adapter tests**
+
+CLI tests cover `--help`, missing required input, unknown flags, stable exit
+codes, JSON receipt writing, and a one-screen summary. Action tests use a real
+temporary `GITHUB_OUTPUT` file and assert multiline-safe output formatting.
+
+- [ ] **Step 2: Verify RED**
+
+Run: `node --test test/cli.test.mjs test/action.test.mjs`  
+Expected: FAIL because both adapters are absent.
+
+- [ ] **Step 3: Implement thin adapters**
+
+Keep parsing and GitHub output formatting local to the adapters; all checking
+continues through `checkPlugin`. `action.yml` uses `runs.using: node24` and
+`runs.main: src/action.mjs`.
+
+- [ ] **Step 4: Verify GREEN**
+
+Run: `node --test test/cli.test.mjs test/action.test.mjs && npm test`  
+Expected: all tests pass with no writes outside their temporary directories.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/cli.mjs src/action.mjs action.yml test/cli.test.mjs test/action.test.mjs package.json
+git commit -m "feat: expose cli and github action"
+```
+
+### Task 6: Released-binary technical falsifier
+
+**Files:**
+- Create: `scripts/falsify-released-codex.mjs`
+- Create: `test/released-codex.test.mjs`
+- Create: `docs/evidence/technical-falsifier.md`
+- Modify: `package.json`
+
+**Interfaces:**
+- `npm run falsify` requires explicit binary paths for Codex `0.147.0` and
+  `0.146.1`; it never installs packages itself.
+- The script runs the synthetic fixture under strict isolation, records duration,
+  hashes the checkout before and after, and writes version-specific receipts
+  under an owned temporary output directory.
+
+- [ ] **Step 1: Write the failing released-binary integration test**
+
+The test skips only when `CODEX_CURRENT_BIN` or `CODEX_PRIOR_BIN` is absent and
+prints an explicit skip reason. With both paths present, it asserts both receipts
+contain the requested version, skill discovery, hook discovery/trust state, no
+personal plugin names, and a duration below 90 seconds.
+
+- [ ] **Step 2: Verify RED with prepared binaries**
+
+Prepare released binaries into a disposable dependency root outside the repo,
+set `CODEX_CURRENT_BIN` and `CODEX_PRIOR_BIN`, then run:
+
+`node --test test/released-codex.test.mjs`
+
+Expected: FAIL on the first unimplemented or incorrect real-protocol behavior,
+with no user-state modification.
+
+- [ ] **Step 3: Implement only the compatibility changes required by observed released behavior**
+
+Do not loosen isolation or convert missing effective evidence into a pass. Record
+version-specific API differences in the evidence document.
+
+- [ ] **Step 4: Verify GREEN and hard gates**
+
+Run with both prepared binaries:
+
+`npm test && npm run falsify`
+
+Expected: zero unit/integration failures; both version receipts; source hash
+unchanged; network and host-state denial observed; no plugin executable code
+run. If a hard gate fails, update the decision to `NO-BUILD` and stop before
+Task 7.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add scripts/falsify-released-codex.mjs test/released-codex.test.mjs docs/evidence/technical-falsifier.md package.json
+git commit -m "test: falsify released codex discovery"
+```
+
+### Task 7: CI, documentation, and gated publication
+
+**Files:**
+- Create: `.github/workflows/ci.yml`
+- Create: `.github/workflows/released-codex.yml`
+- Create: `README.md`
+- Create: `LICENSE`
+- Create: `SECURITY.md`
+- Create: `CONTRIBUTING.md`
+- Create: `docs/receipt.schema.json`
+
+**Interfaces:**
+- CI runs unit tests on Node 24.
+- Released-Codex CI prepares `0.147.0` and `0.146.1`, enters a strict Linux
+  network/filesystem boundary, and uploads sanitized receipts.
+- README copy never claims runtime behavior for MCP/apps or adoption that has
+  not been observed.
+
+- [ ] **Step 1: Write schema and documentation acceptance checks**
+
+Add a test that validates a real receipt against the checked-in schema using a
+small project-owned validator for the schema subset in use. Add a test that
+runs the README copy-paste CLI example against the synthetic fixture with the
+fake app server boundary; do not grep prose text.
+
+- [ ] **Step 2: Verify RED**
+
+Run: `node --test test/receipt-schema.test.mjs test/readme-example.test.mjs`  
+Expected: FAIL because schema and documented example are not yet present.
+
+- [ ] **Step 3: Add minimal release documentation and workflows**
+
+Use MIT license. State Linux-only strict Action support, experimental Codex
+plugin APIs, exact no-execution boundary, receipt statuses, version matrix,
+and known `DECLARED_ONLY` MCP/app limitation. Workflows pin third-party actions
+to full commit SHAs.
+
+- [ ] **Step 4: Verify locally, then in a private remote**
+
+Run: `npm test && npm run falsify && git diff --check`  
+Create `builtbyhuy/codex-plugin-check` privately, push the feature branch, and
+observe both workflows. Fix only evidence-backed failures through new failing
+tests. Do not make the repository public if strict Linux isolation fails.
+
+- [ ] **Step 5: Publish only after both workflow gates pass**
+
+Merge reviewed commits to `main`, change repository visibility to public, tag
+`v0.1.0`, and create release notes that bind every claim to the technical
+receipt. Record repository URL, tag SHA, workflow URLs, and artifact URLs in
+`docs/evidence/technical-falsifier.md`.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add .github README.md LICENSE SECURITY.md CONTRIBUTING.md docs/receipt.schema.json test
+git commit -m "docs: prepare evidence-bound v0 release"
+```
+
+### Task 8: Bounded maintainer validation and application hold
+
+**Files:**
+- Create: `docs/evidence/maintainer-validation.csv`
+- Create: `docs/evidence/maintainer-validation.md`
+- Create: `docs/evidence/application-readiness.md`
+
+**Interfaces:**
+- Validation ledger columns are `repository`, `maintainer`, `public_workflow`,
+  `contact_route`, `sent_at`, `receipt_url`, `ran_at`, `unknown_defect`,
+  `retained_required_ci`, `response_url`, and `status`.
+- Application readiness records only public, linkable evidence and keeps
+  `HOLD` until every market and maintenance gate in the specification passes.
+
+- [ ] **Step 1: Create the evidence ledger and exact outreach payload**
+
+Populate at most 20 repositories from the previously audited bespoke-workflow
+pool. Each row must bind to a public workflow and a public maintainer route.
+Draft one concise request asking the maintainer to run the pinned prerelease and
+report its receipt; do not claim endorsement or acceptance.
+
+- [ ] **Step 2: Send the bounded cohort and record receipts separately from outcomes**
+
+Use only public project channels suitable for tooling feedback. Record an
+external send only after observing the resulting URL or platform receipt.
+Record a run only from a maintainer-provided receipt or public workflow run.
+
+- [ ] **Step 3: Apply the market stop rule**
+
+After 20 qualified exposures, continue only with at least three independent
+runs, at least two repositories retaining required CI, and at least one
+credible previously unknown defect. Otherwise mark the project `NO-BUILD` for
+further product investment while leaving the useful OSS artifact public.
+
+- [ ] **Step 4: Keep application readiness evidence-bound**
+
+Do not submit the Codex for Open Source application until two feedback-driven
+releases, one Codex upgrade regression, one accepted/reproduced upstream issue,
+public triage/review, and ten public downstream workflows are all linked. When
+the gate clears, prepare the exact form payload, verify every claim, submit it,
+and store the submission receipt separately from any approval outcome.
+
+- [ ] **Step 5: Commit the public evidence state**
+
+```bash
+git add docs/evidence/maintainer-validation.csv docs/evidence/maintainer-validation.md docs/evidence/application-readiness.md
+git commit -m "docs: track maintainer validation evidence"
+```
+
