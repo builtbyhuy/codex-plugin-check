@@ -1,9 +1,8 @@
 import { randomUUID as randomRealUUID } from 'node:crypto';
-import { appendFile, lstat, readFile } from 'node:fs/promises';
+import { appendFile, lstat, readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { main as cliMainReal } from './cli.mjs';
-import { exitCodeForStatus } from './receipt.mjs';
+import { main as cliMainReal, validateReceipt } from './cli.mjs';
 
 const INPUTS = [
   ['MARKETPLACE-ROOT', '--marketplace-root'],
@@ -14,13 +13,6 @@ const INPUTS = [
   ['OUTPUT', '--output'],
   ['ISOLATION', '--isolation']
 ];
-const RECEIPT_STATUSES = new Set([
-  'PASS',
-  'FAIL',
-  'INCONCLUSIVE',
-  'ISOLATION_VIOLATION'
-]);
-
 function writeIo(stream, value) {
   if (stream && typeof stream.write === 'function') stream.write(value);
 }
@@ -57,6 +49,37 @@ async function receiptIdentity(receiptPath, inspect) {
 function sameIdentity(left, right) {
   return left !== null && right !== null &&
     left.device === right.device && left.inode === right.inode;
+}
+
+async function receiptExpectation(env, baseDirectory, dependencies) {
+  const common = {
+    codexVersion: env['INPUT_CODEX-VERSION'],
+    plugin: env.INPUT_PLUGIN
+  };
+  const isolation = env.INPUT_ISOLATION || 'strict';
+  if (isolation === 'strict') {
+    return {
+      ...common,
+      sourceRoot: '/workspace',
+      platformOs: 'linux',
+      isolation: { mode: 'strict', network: 'denied', hostState: 'denied' }
+    };
+  }
+  if (isolation === 'env') {
+    if (!env['INPUT_MARKETPLACE-ROOT']) {
+      throw new Error('Environment mode requires a marketplace root');
+    }
+    const resolveRealPath = dependencies.realpath ?? realpath;
+    return {
+      ...common,
+      sourceRoot: await resolveRealPath(
+        path.resolve(baseDirectory, env['INPUT_MARKETPLACE-ROOT'])
+      ),
+      platform: `${process.platform}-${process.arch}`,
+      isolation: { mode: 'env', network: 'not_enforced', hostState: 'not_enforced' }
+    };
+  }
+  throw new Error('Action isolation must be strict or env');
 }
 
 export async function runAction(env = process.env, io = process, dependencies = {}) {
@@ -104,15 +127,21 @@ export async function runAction(env = process.env, io = process, dependencies = 
     writeIo(io.stderr, `Error: Action receipt is not valid JSON: ${cause.message}\n`);
     return 2;
   }
-  const requestedCodexVersion = env['INPUT_CODEX-VERSION'];
-  if (receipt.schemaVersion !== '0.1.0' ||
-    !RECEIPT_STATUSES.has(receipt.status) ||
-    typeof requestedCodexVersion !== 'string' || requestedCodexVersion === '' ||
-    receipt.codexVersion !== requestedCodexVersion) {
-    writeIo(io.stderr, 'Error: Action receipt schema, status, or Codex version is invalid\n');
+  let expected;
+  try {
+    expected = await receiptExpectation(env, baseDirectory, dependencies);
+  } catch (cause) {
+    writeIo(io.stderr, `Error: Could not establish expected Action receipt: ${cause.message}\n`);
     return 2;
   }
-  if (exitCodeForStatus(receipt.status) !== code) {
+  let receiptCode;
+  try {
+    receiptCode = validateReceipt(receipt, expected);
+  } catch (cause) {
+    writeIo(io.stderr, `Error: Invalid Action receipt: ${cause.message}\n`);
+    return 2;
+  }
+  if (receiptCode !== code) {
     writeIo(io.stderr, 'Error: Action receipt status and CLI exit code disagree\n');
     return 2;
   }

@@ -61,7 +61,7 @@ function receiptFor(fixture, status = 'PASS', isolation = {
     schemaVersion: '0.1.0',
     status,
     codexVersion: '0.147.0',
-    platform: 'linux-x64',
+    platform: `${process.platform}-${process.arch}`,
     plugin: {
       name: 'sample',
       marketplace: 'local-marketplace',
@@ -329,7 +329,7 @@ test('direct env mode rejects a receipt that claims strict certification', async
   });
 
   assert.equal(code, 2);
-  assert.match(capture.stderr(), /env receipt.*not_enforced/i);
+  assert.match(capture.stderr(), /isolation.*expected boundary/i);
   assert.doesNotMatch(capture.stdout(), /PASS|success/i);
   await assert.rejects(access(fixture.output), { code: 'ENOENT' });
 });

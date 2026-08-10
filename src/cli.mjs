@@ -207,7 +207,8 @@ async function verifyCodexVersion(options, runProcess, environment) {
 }
 
 function hasExactIsolation(receipt, expected) {
-  return receipt?.isolation !== null && typeof receipt?.isolation === 'object' &&
+  return expected !== null && typeof expected === 'object' &&
+    receipt?.isolation !== null && typeof receipt?.isolation === 'object' &&
     !Array.isArray(receipt.isolation) &&
     Object.keys(receipt.isolation).sort().join(',') === 'hostState,mode,network' &&
     receipt.isolation.mode === expected.mode &&
@@ -215,13 +216,19 @@ function hasExactIsolation(receipt, expected) {
     receipt.isolation.hostState === expected.hostState;
 }
 
-function validateCommonReceipt(receipt, expected) {
+export function validateReceipt(receipt, expected) {
+  if (typeof expected?.codexVersion !== 'string' || expected.codexVersion === '' ||
+    typeof expected?.plugin !== 'string' || expected.plugin === '' ||
+    typeof expected?.sourceRoot !== 'string' || expected.sourceRoot === '') {
+    throw new Error('Expected receipt identity is incomplete');
+  }
   const validStatus = exitCodeForStatus(receipt?.status);
   if (receipt?.schemaVersion !== '0.1.0' ||
     !RECEIPT_STATUSES.has(receipt.status) || !Number.isInteger(validStatus)) {
     throw new Error('Probe returned an invalid receipt schema or status');
   }
-  if (receipt.codexVersion !== expected.codexVersion) {
+  if (typeof receipt.codexVersion !== 'string' || receipt.codexVersion === '' ||
+    receipt.codexVersion !== expected.codexVersion) {
     throw new Error('Probe receipt Codex version does not match the request');
   }
   if (receipt.plugin?.name !== expected.plugin ||
@@ -229,13 +236,21 @@ function validateCommonReceipt(receipt, expected) {
     typeof receipt.plugin?.marketplace !== 'string' || receipt.plugin.marketplace === '') {
     throw new Error('Probe receipt plugin identity or source root does not match the request');
   }
-  if (typeof receipt.platform !== 'string' || receipt.platform === '' ||
+  const platformMatches = typeof receipt.platform === 'string' && receipt.platform !== '' &&
+    (expected.platform === undefined || receipt.platform === expected.platform) &&
+    (expected.platformOs === undefined ||
+      (receipt.platform.startsWith(`${expected.platformOs}-`) &&
+        receipt.platform.length > expected.platformOs.length + 1));
+  if (!platformMatches ||
     !Array.isArray(receipt.capabilities) || receipt.capabilities.some((capability) =>
       !CAPABILITY_KINDS.has(capability?.kind) ||
       typeof capability?.key !== 'string' || capability.key === '' ||
       typeof capability?.source !== 'string' || capability.source === '' ||
       !CAPABILITY_STATUSES.has(capability?.status))) {
     throw new Error('Probe receipt platform or capabilities do not match the schema');
+  }
+  if (!hasExactIsolation(receipt, expected.isolation)) {
+    throw new Error('Probe receipt isolation does not match the expected boundary');
   }
   return validStatus;
 }
@@ -394,18 +409,17 @@ async function runEnv(options, io, dependencies) {
     output: options.output,
     isolation: 'env'
   });
-  const code = validateCommonReceipt(receipt, {
+  const code = validateReceipt(receipt, {
     codexVersion: options.codexVersion,
     plugin: options.plugin,
-    sourceRoot: options.marketplaceRoot
+    sourceRoot: options.marketplaceRoot,
+    platform: `${process.platform}-${process.arch}`,
+    isolation: {
+      mode: 'env',
+      network: 'not_enforced',
+      hostState: 'not_enforced'
+    }
   });
-  if (!hasExactIsolation(receipt, {
-    mode: 'env',
-    network: 'not_enforced',
-    hostState: 'not_enforced'
-  })) {
-    throw new Error('Env receipt must use env isolation with not_enforced boundaries');
-  }
   await writeReceipt(options.output, receipt, options.marketplaceRoot, dependencies);
   printSummary(io, receipt, options.quiet);
   return code;
@@ -457,18 +471,17 @@ async function runStrict(options, io, dependencies) {
     });
     childCode = child.code;
     stagedReceipt = JSON.parse(await read(isolation.outputPath, 'utf8'));
-    const expectedCode = validateCommonReceipt(stagedReceipt, {
+    const expectedCode = validateReceipt(stagedReceipt, {
       codexVersion: options.codexVersion,
       plugin: options.plugin,
-      sourceRoot: '/workspace'
+      sourceRoot: '/workspace',
+      platformOs: 'linux',
+      isolation: {
+        mode: 'env',
+        network: 'not_enforced',
+        hostState: 'not_enforced'
+      }
     });
-    if (!hasExactIsolation(stagedReceipt, {
-      mode: 'env',
-      network: 'not_enforced',
-      hostState: 'not_enforced'
-    })) {
-      throw new Error('Staged receipt must use exact env/not_enforced isolation');
-    }
     if (childCode !== expectedCode) {
       throw new Error(
         `Staged receipt status and child exit code disagree (${stagedReceipt.status} vs ${childCode})`

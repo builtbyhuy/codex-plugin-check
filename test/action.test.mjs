@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { access, mkdtemp, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -242,6 +242,99 @@ test('Action validates the current receipt schema and requested Codex version', 
     assert.match(capture.stderr(), /schema|Codex version/i);
     await assert.rejects(access(fixture.githubOutput), { code: 'ENOENT' });
   }
+});
+
+test('Action rejects fresh but incomplete or identity-swapped receipts', async (t) => {
+  const { runAction } = await import('../src/action.mjs');
+  const cases = [
+    {
+      label: 'three-field receipt',
+      receipt: { schemaVersion: '0.1.0', status: 'PASS', codexVersion: '0.147.0' }
+    },
+    { label: 'missing plugin', receipt: validReceipt({ plugin: undefined }) },
+    { label: 'missing platform', receipt: validReceipt({ platform: undefined }) },
+    { label: 'wrong strict platform', receipt: validReceipt({ platform: 'darwin-arm64' }) },
+    { label: 'missing capabilities', receipt: validReceipt({ capabilities: undefined }) },
+    { label: 'missing isolation', receipt: validReceipt({ isolation: undefined }) },
+    {
+      label: 'empty marketplace',
+      receipt: validReceipt({
+        plugin: { name: 'sample', marketplace: '', sourceRoot: '/workspace' }
+      })
+    },
+    {
+      label: 'swapped plugin',
+      receipt: validReceipt({
+        plugin: { name: 'other', marketplace: 'local', sourceRoot: '/workspace' }
+      })
+    },
+    {
+      label: 'swapped source',
+      receipt: validReceipt({
+        plugin: { name: 'sample', marketplace: 'local', sourceRoot: '/host/checkout' }
+      })
+    },
+    {
+      label: 'wrong isolation',
+      receipt: validReceipt({
+        isolation: { mode: 'env', network: 'not_enforced', hostState: 'not_enforced' }
+      })
+    },
+    {
+      label: 'malformed capability',
+      receipt: validReceipt({
+        capabilities: [{ kind: 'skill', key: 'sample', status: 'DISCOVERED_EFFECTIVE' }]
+      })
+    }
+  ];
+
+  for (const { label, receipt } of cases) {
+    const fixture = await makeFixture(t);
+    const capture = captureIo();
+    const code = await runAction(actionEnv(fixture), capture.io, {
+      cliMain: async () => {
+        await atomicReceipt(fixture.receiptPath, receipt);
+        return 0;
+      }
+    });
+    assert.equal(code, 2, label);
+    assert.match(capture.stderr(), /^Error: /, label);
+    await assert.rejects(access(fixture.githubOutput), { code: 'ENOENT' });
+  }
+});
+
+test('Action validates an env receipt against the canonical root and current platform', async (t) => {
+  const { runAction } = await import('../src/action.mjs');
+  const fixture = await makeFixture(t);
+  const marketplaceRoot = path.join(fixture.root, 'marketplace');
+  await mkdir(marketplaceRoot);
+  const env = actionEnv(fixture);
+  env['INPUT_MARKETPLACE-ROOT'] = marketplaceRoot;
+  env.INPUT_ISOLATION = 'env';
+  const receipt = validReceipt({
+    platform: `${process.platform}-${process.arch}`,
+    plugin: {
+      name: 'sample',
+      marketplace: 'local',
+      sourceRoot: await realpath(marketplaceRoot)
+    },
+    isolation: { mode: 'env', network: 'not_enforced', hostState: 'not_enforced' }
+  });
+  const uuids = ['status', 'receipt', 'version'];
+
+  const code = await runAction(env, process, {
+    cliMain: async () => {
+      await atomicReceipt(fixture.receiptPath, receipt);
+      return 0;
+    },
+    randomUUID: () => uuids.shift()
+  });
+
+  assert.equal(code, 0);
+  assert.equal(
+    parseGithubOutput(await readFile(fixture.githubOutput, 'utf8')).status.value,
+    'PASS'
+  );
 });
 
 test('a genuine atomic replacement is published for the current invocation', async (t) => {
