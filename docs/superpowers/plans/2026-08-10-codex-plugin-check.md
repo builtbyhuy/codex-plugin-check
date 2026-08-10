@@ -522,14 +522,14 @@ Use the prepared released `0.147.0` and `0.146.1` binaries to reconcile each
 observed capability set against the immutable source before strict CI. Record
 these only as diagnostics; they cannot satisfy the strict gate.
 
-- [ ] **Step 5: Run the strict matrix in the private remote**
+- [x] **Step 5: Run the strict matrix in the private remote**
 
 The workflow is main-push/manual only, least privilege, Node 24, pinned Actions,
 and always uploads a relative-path evidence ledger. Observe all 20 cells inside
 the existing network/host-state-denied boundary. Retain source/tree/adapter
 hashes, sanitized receipts, run SHA/URL, and artifact identity.
 
-- [ ] **Step 6: Reconcile and review before publication**
+- [x] **Step 6: Reconcile and review before publication**
 
 Independently compare the artifact to immutable source expectations. Mark the
 technical public-fixture gate `PASS` only when all ten fixtures have complete

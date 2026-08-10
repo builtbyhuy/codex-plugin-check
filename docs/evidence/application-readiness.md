@@ -4,11 +4,11 @@
 
 `HOLD — NOT READY TO SUBMIT`.
 
-The repository is still private, the public-fixture runtime gate is incomplete,
-and there is no independent retained usage yet. Submitting now would establish
-that Huy created a project, but it would not establish the usage, ecosystem
-importance, or ongoing maintainer responsibility that OpenAI asks applicants
-to explain.
+The repository is still private and there is no independent retained usage or
+public maintenance history yet. The technical strict-Linux and public-fixture
+gates now pass, but submitting now would establish only that Huy created and
+validated a project. It would not establish the usage, ecosystem importance,
+or ongoing maintainer responsibility that OpenAI asks applicants to explain.
 
 OpenAI's current form says eligible applicants maintain active open-source
 projects and that reviewers consider meaningful usage, broad adoption or clear
@@ -23,12 +23,16 @@ Source: [Codex for Open Source](https://openai.com/form/codex-for-oss/).
 | Public repository and profile | `HOLD` | Public GitHub profile and public repository URL |
 | Useful, bounded technical job | `PASS` | Real released-Codex loader evidence with no model/auth dependency |
 | Synthetic strict boundary | `PASS` | Private Linux receipts for both target releases |
-| Public-plugin compatibility | `UNRUN` | Reconciled 10-repository, 20-cell strict matrix |
+| Public-plugin compatibility | `PASS` | Reconciled 10-repository, 20-cell strict matrix |
 | Independent retained use | `0` | External repositories keep the workflow enabled |
 | Unknown regression caught | `1 local defect` | Publicly linkable regression/issue accepted or reproduced externally |
 | Releases | `0 public releases` | Maintained tagged releases and release notes |
 | Ongoing maintainer duties | `INSUFFICIENT` | Public issue triage, PR review and release work over time |
 | Application | `NOT SUBMITTED` | All required form fields bound to public evidence |
+
+The technical compatibility result is bound to the [reconciled private Linux
+run and artifact ledger](public-fixture-matrix.md#strict-linux-observation).
+It is publication evidence, not usage or maintainer-role evidence.
 
 The local defect was real: an unmodified Claude-compatible marketplace loaded
 in Codex while the checker rejected it. The fix is useful product evidence, but
@@ -72,8 +76,8 @@ local files.
 
 ## Next evidence-producing actions
 
-1. Finish and privately reconcile the strict public-fixture matrix.
-2. Publish only after security/code review and all technical gates pass.
+1. Publish the reviewed `v0.1.0` release with durable sanitized evidence.
+2. Keep the application on hold while independent use and maintenance accrue.
 3. Offer a bounded integration to maintainers whose immutable fixtures were
    tested; do not open promotional issues or claim endorsement.
 4. Record retained workflows, maintainer replies, defects and release upkeep in

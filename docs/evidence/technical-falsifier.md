@@ -2,12 +2,13 @@
 
 ## Decision and gate ledger
 
-`HOLD` for the project/publication decision. The bounded synthetic falsifier's
-orchestration, environment lanes, and private strict Linux run are verified,
-but the required ten-public-fixture specification matrix is still `UNRUN`
-(`0/10`). A successful bounded command must therefore report
-`status: "HOLD"` with `boundedFalsifier: "PASS"`; it must not report the project
-as `PASS`.
+`PASS` for this bounded synthetic falsifier and `HOLD` for adoption/application
+claims. Its orchestration, environment lanes, and private strict Linux run are
+verified. The bounded artifact intentionally records the separate public
+fixture matrix as `UNRUN (0/10)` because it does not ingest that external
+ledger; the separately retained matrix now passes `10/10` fixtures and `20/20`
+strict cells. The bounded command must still report `status: "HOLD"` with
+`boundedFalsifier: "PASS"` rather than claiming whole-project readiness.
 
 | Gate | Observed status | Evidence boundary |
 | --- | --- | --- |
@@ -16,8 +17,8 @@ as `PASS`.
 | Synthetic orchestration and failure gates | `PASS` | Unit/integration tests, without claiming Docker observation |
 | Strict Linux boundary | `PASS` | Private GitHub Actions run on `ubuntu-24.04` |
 | Strict positive and negative lanes | `PASS` | Four exact receipts across both released versions |
-| Public fixture specification matrix | `UNRUN` | `0/10`; outside this bounded falsifier |
-| Publication | `HOLD` | Repository remains private until the public-fixture gate passes |
+| Public fixture specification matrix | `PASS` | Separate reconciled ledger: `10/10`, `20/20` |
+| Publication | `HOLD` | Repository remains private until the reviewed release evidence is durable |
 
 ## Version and variant contract
 
@@ -172,6 +173,8 @@ Artifact SHA-256 values:
 | `codex-0.146.1-negative.json` | `9ac7c8e980bc7157d3125f64204e97e836b1bad316f9c61a18cb32b36c2ba5ea` |
 | `falsifier-summary.json` | `dacbcfa08a7888f7fbad27f9ba1855fe759aca87d8c1bebd64f150c947ad3e8d` |
 
-This closes the bounded synthetic strict-Linux uncertainty. It does not close
-the product/publication decision: the project remains `HOLD` until the ten
-public fixtures are run and honestly reconciled.
+This closes the bounded synthetic strict-Linux uncertainty. The later
+[public fixture matrix](public-fixture-matrix.md) also closes the technical
+`10/10` compatibility gate. The project remains `HOLD` for adoption and Codex
+for Open Source application claims until public release and maintenance
+evidence exist.
