@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildReceipt, evaluateCapability, exitCodeForStatus } from '../src/receipt.mjs';
 
-test('sorts capabilities and distinguishes untrusted discovery', () => {
+test('serializes the complete deterministic receipt contract', () => {
   const receipt = buildReceipt({
     codexVersion: '0.147.0',
     platform: 'darwin-arm64',
@@ -11,7 +11,7 @@ test('sorts capabilities and distinguishes untrusted discovery', () => {
       skills: [{ name: 'zeta' }],
       hooks: [{ key: 'alpha', eventName: 'stop' }],
       mcpServers: ['server-a'],
-      apps: []
+      apps: [{ id: 'app-a' }]
     },
     effective: {
       skills: [{ name: 'zeta' }],
@@ -20,12 +20,20 @@ test('sorts capabilities and distinguishes untrusted discovery', () => {
     isolation: { mode: 'strict', network: 'denied', hostState: 'denied' }
   });
 
-  assert.deepEqual(receipt.capabilities.map(({ kind, key, status }) => ({ kind, key, status })), [
-    { kind: 'hook', key: 'alpha', status: 'DISCOVERED_UNTRUSTED' },
-    { kind: 'mcp', key: 'server-a', status: 'DECLARED_ONLY' },
-    { kind: 'skill', key: 'zeta', status: 'DISCOVERED_EFFECTIVE' }
-  ]);
-  assert.equal(receipt.status, 'PASS');
+  assert.deepEqual(receipt, {
+    schemaVersion: '0.1.0',
+    codexVersion: '0.147.0',
+    platform: 'darwin-arm64',
+    plugin: { name: 'sample', marketplace: 'local-marketplace', sourceRoot: '/workspace' },
+    isolation: { mode: 'strict', network: 'denied', hostState: 'denied' },
+    capabilities: [
+      { kind: 'app', key: 'app-a', source: 'plugin/read', status: 'DECLARED_ONLY' },
+      { kind: 'hook', key: 'alpha', source: 'plugin/read + hooks/list', status: 'DISCOVERED_UNTRUSTED' },
+      { kind: 'mcp', key: 'server-a', source: 'plugin/read', status: 'DECLARED_ONLY' },
+      { kind: 'skill', key: 'zeta', source: 'plugin/read + skills/list', status: 'DISCOVERED_EFFECTIVE' }
+    ],
+    status: 'PASS'
+  });
 });
 
 test('maps stable run statuses to exit codes', () => {
@@ -44,6 +52,48 @@ test('fails the receipt when a declared skill or hook is missing from discovery'
   assert.equal(receipt.status, 'FAIL');
   assert.deepEqual(receipt.capabilities.map(({ kind, key, status }) => ({ kind, key, status })), [
     { kind: 'hook', key: 'missing-hook', status: 'MISSING' },
+    { kind: 'skill', key: 'missing-skill', status: 'MISSING' }
+  ]);
+});
+
+test('marks omitted and null effective registries unobservable', () => {
+  const receipt = buildReceipt({
+    declarations: {
+      skills: [{ name: 'unobserved-skill' }],
+      hooks: [{ key: 'unobserved-hook' }]
+    },
+    effective: { hooks: null }
+  });
+
+  assert.equal(receipt.status, 'INCONCLUSIVE');
+  assert.deepEqual(receipt.capabilities, [
+    {
+      kind: 'hook',
+      key: 'unobserved-hook',
+      source: 'plugin/read + hooks/list',
+      status: 'UNOBSERVABLE'
+    },
+    {
+      kind: 'skill',
+      key: 'unobserved-skill',
+      source: 'plugin/read + skills/list',
+      status: 'UNOBSERVABLE'
+    }
+  ]);
+});
+
+test('fails when an observed capability is missing despite another unobservable registry', () => {
+  const receipt = buildReceipt({
+    declarations: {
+      skills: [{ name: 'missing-skill' }],
+      hooks: [{ key: 'unobserved-hook' }]
+    },
+    effective: { skills: [] }
+  });
+
+  assert.equal(receipt.status, 'FAIL');
+  assert.deepEqual(receipt.capabilities.map(({ kind, key, status }) => ({ kind, key, status })), [
+    { kind: 'hook', key: 'unobserved-hook', status: 'UNOBSERVABLE' },
     { kind: 'skill', key: 'missing-skill', status: 'MISSING' }
   ]);
 });
@@ -77,8 +127,7 @@ test('evaluates a trusted discovered skill from a plain JSON record', () => {
   }), {
     kind: 'skill',
     key: 'receipt',
-    declaration: { name: 'receipt' },
-    effective: { name: 'receipt' },
+    source: 'plugin/read + skills/list',
     status: 'DISCOVERED_EFFECTIVE'
   });
 });

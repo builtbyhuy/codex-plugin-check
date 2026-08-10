@@ -13,6 +13,13 @@ const CAPABILITY_SOURCES = Object.freeze([
   ['app', 'apps']
 ]);
 
+const EVIDENCE_SOURCES = Object.freeze({
+  skill: 'plugin/read + skills/list',
+  hook: 'plugin/read + hooks/list',
+  mcp: 'plugin/read',
+  app: 'plugin/read'
+});
+
 function keyFor(kind, item) {
   if (kind === 'mcp') return item;
   if (kind === 'app') return item.id;
@@ -28,18 +35,21 @@ function compareCapabilities(left, right) {
 
 export function evaluateCapability({ kind, key, declaration, effectiveMatch }) {
   if (kind === 'mcp' || kind === 'app') {
-    return { kind, key, declaration, status: 'DECLARED_ONLY' };
+    return { kind, key, source: EVIDENCE_SOURCES[kind], status: 'DECLARED_ONLY' };
+  }
+
+  if (effectiveMatch === null) {
+    return { kind, key, source: EVIDENCE_SOURCES[kind], status: 'UNOBSERVABLE' };
   }
 
   if (effectiveMatch === undefined) {
-    return { kind, key, declaration, status: 'MISSING' };
+    return { kind, key, source: EVIDENCE_SOURCES[kind], status: 'MISSING' };
   }
 
   return {
     kind,
     key,
-    declaration,
-    effective: effectiveMatch,
+    source: EVIDENCE_SOURCES[kind],
     status: kind === 'hook' && effectiveMatch.trustStatus === 'untrusted'
       ? 'DISCOVERED_UNTRUSTED'
       : 'DISCOVERED_EFFECTIVE'
@@ -48,8 +58,10 @@ export function evaluateCapability({ kind, key, declaration, effectiveMatch }) {
 
 export function buildReceipt({ codexVersion, platform, plugin, declarations = {}, effective = {}, isolation }) {
   const capabilities = CAPABILITY_SOURCES.flatMap(([kind, source]) => {
+    const effectiveCollection = effective?.[source];
+    const registryObserved = effectiveCollection !== undefined && effectiveCollection !== null;
     const effectiveByKey = new Map(
-      (effective[source] ?? []).map((item) => [keyFor(kind, item), item])
+      (effectiveCollection ?? []).map((item) => [keyFor(kind, item), item])
     );
 
     return (declarations[source] ?? []).map((declaration) => {
@@ -58,7 +70,7 @@ export function buildReceipt({ codexVersion, platform, plugin, declarations = {}
         kind,
         key,
         declaration,
-        effectiveMatch: effectiveByKey.get(key)
+        effectiveMatch: registryObserved ? effectiveByKey.get(key) : null
       });
     });
   }).sort(compareCapabilities);
@@ -66,14 +78,22 @@ export function buildReceipt({ codexVersion, platform, plugin, declarations = {}
   const hasMissingRuntimeCapability = capabilities.some(({ kind, status }) => (
     (kind === 'skill' || kind === 'hook') && status === 'MISSING'
   ));
+  const hasUnobservableRuntimeCapability = capabilities.some(({ kind, status }) => (
+    (kind === 'skill' || kind === 'hook') && status === 'UNOBSERVABLE'
+  ));
 
   return {
+    schemaVersion: '0.1.0',
     codexVersion,
     platform,
     plugin,
     isolation,
     capabilities,
-    status: hasMissingRuntimeCapability ? 'FAIL' : 'PASS'
+    status: hasMissingRuntimeCapability
+      ? 'FAIL'
+      : hasUnobservableRuntimeCapability
+        ? 'INCONCLUSIVE'
+        : 'PASS'
   };
 }
 
