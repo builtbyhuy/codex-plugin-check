@@ -162,6 +162,7 @@ git commit -m "feat: add bounded app server client"
 ### Task 3: Owned state and strict Linux container isolation
 
 **Files:**
+- Create: `Dockerfile`
 - Create: `src/isolation.mjs`
 - Create: `test/isolation.test.mjs`
 
@@ -171,7 +172,10 @@ git commit -m "feat: add bounded app server client"
   `assertCheckoutUnchanged()`, and `cleanup()`.
 - Strict wrapping produces a Docker build/run invocation with no network, a
   read-only root, no host home/config mount, the target checkout mounted
-  read-only at `/workspace`, and owned writable state/output mounts only.
+  read-only at `/workspace`, the tool mounted read-only at `/tool`, and owned
+  writable state/output mounts only. `Dockerfile` installs exactly
+  `@openai/codex@${CODEX_VERSION}` during image preparation; no package install
+  occurs in the network-denied run.
 - `env` contains only the platform essentials plus explicit isolated path
   variables; all variable names matching credential deny patterns are absent.
 
@@ -183,8 +187,11 @@ first five never enter the child environment, while `PATH` does. Assert
 `HOME`, `CODEX_HOME`, `TMPDIR`, and all XDG variables resolve beneath the owned
 root in `env` mode. Assert the strict Docker command includes `--network none`,
 `--read-only`, `--cap-drop ALL`, `--security-opt no-new-privileges`, a read-only
-`/workspace` bind, and only owned writable state/output mounts. Strict mode on
-non-Linux platforms or without Docker must fail closed.
+`/workspace` bind, a read-only `/tool` bind, a bounded `/state` tmpfs, and only
+the explicit receipt directory as a writable host mount. Assert image build
+arguments use an exact numeric Codex version and reject `latest`, ranges, shell
+metacharacters, and prerelease strings. Strict mode on non-Linux platforms or
+without Docker must fail closed.
 
 - [ ] **Step 2: Verify RED**
 
@@ -210,7 +217,7 @@ denial is observable.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/isolation.mjs test/isolation.test.mjs
+git add Dockerfile src/isolation.mjs test/isolation.test.mjs
 git commit -m "feat: isolate codex probe state"
 ```
 

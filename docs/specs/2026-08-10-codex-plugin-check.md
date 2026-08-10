@@ -141,8 +141,12 @@ records sort by `kind`, then `key`.
 - Network may be used only to prepare a pinned Codex binary before the probe.
 - `strict` mode must be enforced by an OS boundary, not an environment-variable
   claim. V0 strict mode uses a network-disabled, read-only Linux container with
-  no host home/config mounts. macOS and Windows are diagnostic `env` mode only
-  until an equivalent observable boundary is implemented.
+  no host home/config mounts. The image is prepared with an exact Codex version
+  while network is available; the actual probe starts only under
+  `--network none`. The tool source and target checkout are read-only mounts;
+  only owned state and receipt destinations are writable. macOS and Windows are
+  diagnostic `env` mode only until an equivalent observable boundary is
+  implemented.
 - Failure to establish the OS boundary is an error, not an automatic downgrade
   to `env` isolation.
 - The target checkout is read-only during the probe. The only writable paths
