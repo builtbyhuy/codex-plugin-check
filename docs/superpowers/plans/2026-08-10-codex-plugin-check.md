@@ -6,7 +6,7 @@
 
 **Architecture:** A pure comparison layer turns Codex-owned declaration and registry responses into a deterministic receipt. A JSONL app-server client and command runner supply those responses. An OS isolation adapter wraps every real Codex process; the CLI and Node 24 GitHub Action are thin input/output adapters over the same orchestration function.
 
-**Tech Stack:** Node.js 24 ESM, Node built-in test runner, zero runtime dependencies, GitHub JavaScript Action metadata, released `@openai/codex` binaries, macOS `sandbox-exec` for local falsification, Linux container or namespace isolation for CI.
+**Tech Stack:** Node.js 24 ESM, Node built-in test runner, zero runtime dependencies, GitHub JavaScript Action metadata, released `@openai/codex` binaries, and a network-disabled read-only Linux Docker container for strict CI isolation.
 
 ## Global Constraints
 
@@ -159,29 +159,32 @@ git add src/app-server-client.mjs test/fixtures/fake-app-server.mjs test/app-ser
 git commit -m "feat: add bounded app server client"
 ```
 
-### Task 3: Owned state and child-environment isolation
+### Task 3: Owned state and strict Linux container isolation
 
 **Files:**
 - Create: `src/isolation.mjs`
 - Create: `test/isolation.test.mjs`
 
 **Interfaces:**
-- Produces: `createIsolation({ targetRoot, receiptPath, mode, platform }) -> IsolationContext`
+- Produces: `createIsolation({ targetRoot, receiptPath, mode, platform, codexVersion }) -> IsolationContext`
 - `IsolationContext` exposes `root`, `env`, `wrap(command,args)`,
   `assertCheckoutUnchanged()`, and `cleanup()`.
-- Strict macOS wrapping uses `/usr/bin/sandbox-exec -f <owned-profile>`.
+- Strict wrapping produces a Docker build/run invocation with no network, a
+  read-only root, no host home/config mount, the target checkout mounted
+  read-only at `/workspace`, and owned writable state/output mounts only.
 - `env` contains only the platform essentials plus explicit isolated path
   variables; all variable names matching credential deny patterns are absent.
 
-- [ ] **Step 1: Write failing environment and profile tests**
+- [ ] **Step 1: Write failing environment and container-command tests**
 
 Use a synthetic parent environment containing `OPENAI_API_KEY`, `GH_TOKEN`,
 `NPM_TOKEN`, `SSH_AUTH_SOCK`, `HTTPS_PROXY`, and a harmless `PATH`. Assert the
 first five never enter the child environment, while `PATH` does. Assert
 `HOME`, `CODEX_HOME`, `TMPDIR`, and all XDG variables resolve beneath the owned
-root. Assert a generated macOS profile denies network and default access while
-allowing system runtime paths, the Codex executable subtree, the read-only
-target root, the owned root, and the explicit receipt parent.
+root in `env` mode. Assert the strict Docker command includes `--network none`,
+`--read-only`, `--cap-drop ALL`, `--security-opt no-new-privileges`, a read-only
+`/workspace` bind, and only owned writable state/output mounts. Strict mode on
+non-Linux platforms or without Docker must fail closed.
 
 - [ ] **Step 2: Verify RED**
 
@@ -199,9 +202,10 @@ canonical prefix.
 - [ ] **Step 4: Verify GREEN, then run a real sandbox denial characterization**
 
 Run: `node --test test/isolation.test.mjs`  
-Then run a test child through the macOS wrapper that can read its owned canary
-but receives denial for a canary under the real home and for a loopback socket.
-Expected: both automated and characterization tests pass; denial is observable.
+Then, on Linux CI, run a test container that can read its owned canary but
+cannot see a host-home canary, cannot write the checkout, and cannot reach a
+loopback listener. Expected: both automated and characterization tests pass;
+denial is observable.
 
 - [ ] **Step 5: Commit**
 
@@ -235,8 +239,7 @@ Assert the exact command sequence and that the four app-server requests use:
 [
   ['plugin/read', { pluginName: 'sample', marketplacePath: fixtureRoot }],
   ['skills/list', { cwds: [fixtureRoot], forceReload: true }],
-  ['hooks/list', { cwds: [fixtureRoot] }],
-  ['app/list', { forceRefetch: false }]
+  ['hooks/list', { cwds: [fixtureRoot] }]
 ]
 ```
 
@@ -281,7 +284,7 @@ git commit -m "feat: check codex plugin discovery"
 - CLI exports `main(argv, io, dependencies) -> Promise<number>` for tests and
   invokes it only when run as the entry point.
 - Action reads `INPUT_MARKETPLACE-ROOT`, `INPUT_PLUGIN`, `INPUT_CODEX`,
-  `INPUT_CWD`, `INPUT_OUTPUT`, and `INPUT_ISOLATION`; it writes GitHub command
+  `INPUT_CODEX-VERSION`, `INPUT_CWD`, `INPUT_OUTPUT`, and `INPUT_ISOLATION`; it writes GitHub command
   output directly without `@actions/core`.
 - Action outputs: `status`, `receipt`, and `codex-version`.
 
@@ -323,23 +326,24 @@ git commit -m "feat: expose cli and github action"
 - Modify: `package.json`
 
 **Interfaces:**
-- `npm run falsify` requires explicit binary paths for Codex `0.147.0` and
-  `0.146.1`; it never installs packages itself.
-- The script runs the synthetic fixture under strict isolation, records duration,
+- `npm run falsify` requires exact `CODEX_CURRENT_VERSION=0.147.0` and
+  `CODEX_PRIOR_VERSION=0.146.1`; Docker image preparation installs those
+  packages before the network-denied probe.
+- The script runs the synthetic fixture under strict Linux container isolation, records duration,
   hashes the checkout before and after, and writes version-specific receipts
   under an owned temporary output directory.
 
 - [ ] **Step 1: Write the failing released-binary integration test**
 
-The test skips only when `CODEX_CURRENT_BIN` or `CODEX_PRIOR_BIN` is absent and
-prints an explicit skip reason. With both paths present, it asserts both receipts
+The test skips only when Docker is absent and prints an explicit skip reason.
+With Docker present, it asserts both receipts
 contain the requested version, skill discovery, hook discovery/trust state, no
 personal plugin names, and a duration below 90 seconds.
 
 - [ ] **Step 2: Verify RED with prepared binaries**
 
-Prepare released binaries into a disposable dependency root outside the repo,
-set `CODEX_CURRENT_BIN` and `CODEX_PRIOR_BIN`, then run:
+Prepare released binaries into the strict images without touching user state,
+set `CODEX_CURRENT_VERSION=0.147.0` and `CODEX_PRIOR_VERSION=0.146.1`, then run:
 
 `node --test test/released-codex.test.mjs`
 
@@ -475,4 +479,3 @@ and store the submission receipt separately from any approval outcome.
 git add docs/evidence/maintainer-validation.csv docs/evidence/maintainer-validation.md docs/evidence/application-readiness.md
 git commit -m "docs: track maintainer validation evidence"
 ```
-

@@ -35,14 +35,17 @@ The reusable core and CLI accept:
 
 - `--marketplace-root <absolute-or-relative-path>`;
 - `--plugin <plugin-name>`;
-- `--codex <binary-path>`;
+- `--codex <binary-path>` for non-certifying environment diagnostics;
+- `--codex-version <exact-version>` for strict container checks;
 - `--cwd <workspace-path>`, defaulting to the marketplace root;
 - `--output <path>`, defaulting to `conformance.json`;
 - `--isolation strict|env`, defaulting to `strict`.
 
 The GitHub Action accepts equivalent inputs, uses Node 24, and initially
-supports `ubuntu-latest`. It prepares the requested released Codex version
-before entering the network-denied probe.
+supports `ubuntu-latest`. It prepares a container containing the requested
+released Codex version before entering the network-denied probe. Strict mode
+requires Docker; cross-platform environment-only diagnostics cannot emit a
+certified isolation `PASS`.
 
 ## Probe flow
 
@@ -59,8 +62,10 @@ before entering the network-denied probe.
 5. Start `codex app-server --stdio --disable remote_plugin` inside the isolated
    environment. Send `initialize` with `experimentalApi: true`, then send the
    `initialized` notification.
-6. Request `plugin/read`, `skills/list` with `forceReload: true`, `hooks/list`,
-   and `app/list` without refetching.
+6. Request `plugin/read`, `skills/list` with `forceReload: true`, and
+   `hooks/list`. Do not call `app/list`: the released implementation uses an
+   auth/network-backed connector directory. Do not call MCP status APIs: they
+   initialize effective MCP servers.
 7. Treat `plugin/read` as Codex-owned declaration evidence. Treat
    `skills/list` and `hooks/list` as effective discovery evidence. Treat MCP
    and app declarations as `DECLARED_ONLY` unless a released, no-auth,
@@ -135,9 +140,9 @@ records sort by `kind`, then `key`.
 - Never inherit personal Codex/agent configuration or credentials.
 - Network may be used only to prepare a pinned Codex binary before the probe.
 - `strict` mode must be enforced by an OS boundary, not an environment-variable
-  claim. macOS uses a generated `sandbox-exec` profile during the falsifier;
-  the initial GitHub Action uses a network-disabled, read-only Linux container
-  or an equivalently observable namespace.
+  claim. V0 strict mode uses a network-disabled, read-only Linux container with
+  no host home/config mounts. macOS and Windows are diagnostic `env` mode only
+  until an equivalent observable boundary is implemented.
 - Failure to establish the OS boundary is an error, not an automatic downgrade
   to `env` isolation.
 - The target checkout is read-only during the probe. The only writable paths
@@ -158,8 +163,9 @@ records sort by `kind`, then `key`.
 
 The project advances from `VALIDATE` to `BUILD` only when all gates pass:
 
-1. A synthetic all-surface plugin is installed from an exact local checkout by
-   stable Codex `0.147.0` and prior stable `0.146.1`.
+1. A synthetic all-surface declaration plugin is installed from an exact local
+   checkout by stable Codex `0.147.0` and prior stable `0.146.1` inside the
+   strict Linux container.
 2. Both versions provide Codex-owned declaration evidence. Skill and hook
    declarations are correlated to effective registries with no false positive.
 3. A deliberately absent skill and a disabled/untrusted hook produce the
@@ -195,4 +201,3 @@ After technical gates pass:
 Huy has authorized repository creation, publication, maintainer contact, and a
 future application. Authorization does not waive these evidence gates or permit
 false claims about adoption, maintainer status, or eligibility.
-
