@@ -552,7 +552,7 @@ missing row.
 - Application readiness records only public, linkable evidence and keeps
   `HOLD` until every market and maintenance gate in the specification passes.
 
-- [ ] **Step 1: Create the evidence ledger and exact outreach payload**
+- [x] **Step 1: Create the evidence ledger and exact outreach payload**
 
 Populate at most 20 repositories from the previously audited bespoke-workflow
 pool. Each row must bind to a public workflow and a public maintainer route.

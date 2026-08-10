@@ -47,14 +47,16 @@ Submit only after all are observed:
    every version/API incompatibility, with no unexplained tool error.
 2. The repository is public with a signed-off `v0.1.0` release, public CI and
    reproducible evidence links.
-3. At least three unrelated plugin repositories retain the check in their
-   default-branch workflow.
-4. The retained integrations remain green across two consecutive Codex release
-   updates, or one catches a real regression that an upstream maintainer accepts
-   or independently reproduces.
-5. At least 60 days of public maintenance evidence exists, including issue
-   triage, review of an external contribution, and two release decisions.
-6. Every application claim fits one of the public links in this directory; no
+3. At least ten unrelated plugin repositories retain the check in public
+   default-branch workflows.
+4. The retained integrations cover two consecutive Codex release updates and
+   catch at least one real Codex upgrade regression.
+5. At least one separate public upstream issue is accepted or independently
+   reproduced by its maintainer.
+6. At least 60 days of public maintenance evidence exists, including issue
+   triage, review of an external contribution, and two feedback-driven release
+   decisions.
+7. Every application claim fits one of the public links in this directory; no
    stars, downloads, adoption or maintainer duty is inferred from local work.
 
 ## Exact form payload still required
