@@ -6,9 +6,10 @@ produces a deterministic JSON receipt from Codex-owned install, declaration,
 skill-registry, and hook-registry responses.
 
 This repository is in pre-release validation. The current project decision is
-**HOLD**: the bounded synthetic falsifier has passed private strict Linux CI,
-but the ten-public-fixture gate is **UNRUN (0/10)**. There is no adoption or
-production-readiness claim.
+**HOLD for adoption/application claims**: the bounded synthetic falsifier and
+the ten-public-fixture strict matrix have passed private Linux CI (`10/10`
+fixtures, `20/20` cells), but no public immutable release or independent use
+exists yet. There is no adoption or production-readiness claim.
 
 ## What the receipt proves
 
@@ -145,10 +146,13 @@ unless a trusted operator explicitly sets
 that expensive test; its single evidence-producing step is `npm run falsify`.
 
 It runs positive and deliberately disabled-skill lanes for both versions and
-writes an evidence ledger. Even after that bounded check passes, its summary
-remains `HOLD` while the separate public-fixture matrix is `UNRUN (0/10)`.
+writes an evidence ledger. That bounded artifact remains `HOLD` because it does
+not ingest the separate public-fixture result. The current project ledger links
+the independently reconciled public matrix `PASS` (`10/10`, `20/20`) while
+retaining `HOLD` for publication history, adoption and application readiness.
 See [`docs/evidence/technical-falsifier.md`](docs/evidence/technical-falsifier.md)
-for the observed strict boundary and the remaining public-fixture hold.
+and [`docs/evidence/public-fixture-matrix.md`](docs/evidence/public-fixture-matrix.md)
+for the two evidence boundaries.
 
 ## Development
 

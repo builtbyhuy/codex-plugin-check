@@ -2,9 +2,11 @@
 
 ## Decision
 
-`HOLD`. The immutable ten-repository input audit is complete, but the strict
-Linux matrix has not run yet. This document records inputs and observed output;
-it does not turn a static compatibility expectation into a runtime result.
+`PASS — 10/10 fixtures, 20/20 strict cells`. The private main-branch Linux run
+completed successfully and its retained artifact was independently reconciled
+against every immutable input and production receipt validator. This clears the
+technical public-fixture gate; it does not establish adoption, ecosystem
+importance, or ongoing maintainer work.
 
 ## Fixed inputs
 
@@ -13,16 +15,16 @@ target matrix is Codex `0.147.0` and `0.146.1`, for 20 independent strict cells.
 
 | Repository | Commit | Marketplace root | Plugin | Version | Preparation | Expected kinds | License | Strict result |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| [`bitrouter/bitrouter`](https://github.com/bitrouter/bitrouter) | [`678384888b73fc290ce4ce503a8a7f2a5cbf6da8`](https://github.com/bitrouter/bitrouter/commit/678384888b73fc290ce4ce503a8a7f2a5cbf6da8) | `.` | `bitrouter` | `0.1.0` | `DIRECT` | skill, MCP | Apache-2.0 | `UNRUN` |
-| [`Cassette-Editor/oh-my-cassette`](https://github.com/Cassette-Editor/oh-my-cassette) | [`cdad1fd2f62544b65a01ad00f74b19fe3ce4ca32`](https://github.com/Cassette-Editor/oh-my-cassette/commit/cdad1fd2f62544b65a01ad00f74b19fe3ce4ca32) | `.` | `oh-my-cassette` | `0.4.14` | `STATIC_ADAPTER:local-source-v1` | skill, MCP | MIT | `UNRUN` |
-| [`mostlyharmless-ai/watercooler`](https://github.com/mostlyharmless-ai/watercooler) | [`a5efa89df02e7796e20881fef4847f129d84d367`](https://github.com/mostlyharmless-ai/watercooler/commit/a5efa89df02e7796e20881fef4847f129d84d367) | `.` | `watercooler` | `0.5.6` | `DIRECT` | skill, MCP | Apache-2.0 | `UNRUN` |
-| [`commercetools/commercetools-ai-plugins`](https://github.com/commercetools/commercetools-ai-plugins) | [`440d6bd56eb2969b6a0dd41e3fcff286def0787c`](https://github.com/commercetools/commercetools-ai-plugins/commit/440d6bd56eb2969b6a0dd41e3fcff286def0787c) | `.` | `commercetools` | `0.14.0` | `DIRECT` | skill, MCP | CC-BY-4.0 | `UNRUN` |
-| [`agentis-tools/ctx`](https://github.com/agentis-tools/ctx) | [`1782436e0ebf8d95ef4c086d94351698c464c4ee`](https://github.com/agentis-tools/ctx/commit/1782436e0ebf8d95ef4c086d94351698c464c4ee) | `plugins/codex/ctx` | `ctx` | `0.4.0` | `DIRECT` | skill, hook | Apache-2.0 OR MIT | `UNRUN` |
-| [`agentmail-to/agentmail-plugins`](https://github.com/agentmail-to/agentmail-plugins) | [`134887caf9375229415e09c760ae31baa4cc1ec3`](https://github.com/agentmail-to/agentmail-plugins/commit/134887caf9375229415e09c760ae31baa4cc1ec3) | `.` | `agentmail` | `0.3.0` | `DIRECT` | skill, MCP | MIT | `UNRUN` |
-| [`ujjwalredd/sarathi`](https://github.com/ujjwalredd/sarathi) | [`08a51154a2f30af3eb4f6acb11115b9db912c5f8`](https://github.com/ujjwalredd/sarathi/commit/08a51154a2f30af3eb4f6acb11115b9db912c5f8) | `.` | `sarathi` | `0.6.0` | `DIRECT` | skill | MIT | `UNRUN` |
-| [`sofus-nl/cc-plugin-codex`](https://github.com/sofus-nl/cc-plugin-codex) | [`cc5123f7fa18db9c38f838a9b70119e5a0a6847c`](https://github.com/sofus-nl/cc-plugin-codex/commit/cc5123f7fa18db9c38f838a9b70119e5a0a6847c) | `.` | `cc-plugin-codex` | `0.1.1` | `DIRECT` | skill, hook | Apache-2.0 + NOTICE | `UNRUN` |
-| [`RMI/speedy-skills`](https://github.com/RMI/speedy-skills) | [`e983f800056a12b63fd60d5148538f98aaafe643`](https://github.com/RMI/speedy-skills/commit/e983f800056a12b63fd60d5148538f98aaafe643) | `.` | `example-minimal` | `0.1.0` | `DIRECT` | skill | MIT | `UNRUN` |
-| [`roadrunner-tuff/roadrunner-admin-plugin`](https://github.com/roadrunner-tuff/roadrunner-admin-plugin) | [`8e130c07656c8f9db8bf5431332c9aed60a4b133`](https://github.com/roadrunner-tuff/roadrunner-admin-plugin/commit/8e130c07656c8f9db8bf5431332c9aed60a4b133) | `.` | `roadrunner-admin` | `0.1.0` | `DIRECT` | skill, MCP | Apache-2.0 | `UNRUN` |
+| [`bitrouter/bitrouter`](https://github.com/bitrouter/bitrouter) | [`678384888b73fc290ce4ce503a8a7f2a5cbf6da8`](https://github.com/bitrouter/bitrouter/commit/678384888b73fc290ce4ce503a8a7f2a5cbf6da8) | `.` | `bitrouter` | `0.1.0` | `DIRECT` | skill, MCP | Apache-2.0 | `PASS` |
+| [`Cassette-Editor/oh-my-cassette`](https://github.com/Cassette-Editor/oh-my-cassette) | [`cdad1fd2f62544b65a01ad00f74b19fe3ce4ca32`](https://github.com/Cassette-Editor/oh-my-cassette/commit/cdad1fd2f62544b65a01ad00f74b19fe3ce4ca32) | `.` | `oh-my-cassette` | `0.4.14` | `STATIC_ADAPTER:local-source-v1` | skill, MCP | MIT | `PASS` |
+| [`mostlyharmless-ai/watercooler`](https://github.com/mostlyharmless-ai/watercooler) | [`a5efa89df02e7796e20881fef4847f129d84d367`](https://github.com/mostlyharmless-ai/watercooler/commit/a5efa89df02e7796e20881fef4847f129d84d367) | `.` | `watercooler` | `0.5.6` | `DIRECT` | skill, MCP | Apache-2.0 | `PASS` |
+| [`commercetools/commercetools-ai-plugins`](https://github.com/commercetools/commercetools-ai-plugins) | [`440d6bd56eb2969b6a0dd41e3fcff286def0787c`](https://github.com/commercetools/commercetools-ai-plugins/commit/440d6bd56eb2969b6a0dd41e3fcff286def0787c) | `.` | `commercetools` | `0.14.0` | `DIRECT` | skill, MCP | CC-BY-4.0 | `PASS` |
+| [`agentis-tools/ctx`](https://github.com/agentis-tools/ctx) | [`1782436e0ebf8d95ef4c086d94351698c464c4ee`](https://github.com/agentis-tools/ctx/commit/1782436e0ebf8d95ef4c086d94351698c464c4ee) | `plugins/codex/ctx` | `ctx` | `0.4.0` | `DIRECT` | skill, hook | Apache-2.0 OR MIT | `PASS` |
+| [`agentmail-to/agentmail-plugins`](https://github.com/agentmail-to/agentmail-plugins) | [`134887caf9375229415e09c760ae31baa4cc1ec3`](https://github.com/agentmail-to/agentmail-plugins/commit/134887caf9375229415e09c760ae31baa4cc1ec3) | `.` | `agentmail` | `0.3.0` | `DIRECT` | skill, MCP | MIT | `PASS` |
+| [`ujjwalredd/sarathi`](https://github.com/ujjwalredd/sarathi) | [`08a51154a2f30af3eb4f6acb11115b9db912c5f8`](https://github.com/ujjwalredd/sarathi/commit/08a51154a2f30af3eb4f6acb11115b9db912c5f8) | `.` | `sarathi` | `0.6.0` | `DIRECT` | skill | MIT | `PASS` |
+| [`sofus-nl/cc-plugin-codex`](https://github.com/sofus-nl/cc-plugin-codex) | [`cc5123f7fa18db9c38f838a9b70119e5a0a6847c`](https://github.com/sofus-nl/cc-plugin-codex/commit/cc5123f7fa18db9c38f838a9b70119e5a0a6847c) | `.` | `cc-plugin-codex` | `0.1.1` | `DIRECT` | skill, hook | Apache-2.0 + NOTICE | `PASS` |
+| [`RMI/speedy-skills`](https://github.com/RMI/speedy-skills) | [`e983f800056a12b63fd60d5148538f98aaafe643`](https://github.com/RMI/speedy-skills/commit/e983f800056a12b63fd60d5148538f98aaafe643) | `.` | `example-minimal` | `0.1.0` | `DIRECT` | skill | MIT | `PASS` |
+| [`roadrunner-tuff/roadrunner-admin-plugin`](https://github.com/roadrunner-tuff/roadrunner-admin-plugin) | [`8e130c07656c8f9db8bf5431332c9aed60a4b133`](https://github.com/roadrunner-tuff/roadrunner-admin-plugin/commit/8e130c07656c8f9db8bf5431332c9aed60a4b133) | `.` | `roadrunner-admin` | `0.1.0` | `DIRECT` | skill, MCP | Apache-2.0 | `PASS` |
 
 `local-source-v1` may change only `/plugins/0/source` in
 `.agents/plugins/marketplace.json` to `{"source":"local","path":"./"}`.
@@ -114,14 +116,43 @@ and its adapted output is
 The differing marketplace hash is therefore expected and bounded. These are
 preparation receipts, not Codex compatibility receipts.
 
+## Strict Linux observation
+
+The [main-branch public fixture run 31387585244](https://github.com/builtbyhuy/codex-plugin-check/actions/runs/31387585244)
+completed successfully on `ubuntu-24.04` and Node `24.19.0` at merge commit
+`3285a65bab2ba805665c6be4e4349874fc7be417`. Its job ran from
+`2026-08-10T12:20:54Z` to `2026-08-10T12:21:55Z`; the evidence-producing step
+completed in 47 seconds. The same commit also passed [ordinary CI](https://github.com/builtbyhuy/codex-plugin-check/actions/runs/31387585232)
+and the [released-Codex synthetic falsifier](https://github.com/builtbyhuy/codex-plugin-check/actions/runs/31387585316).
+
+The strict run produced artifact `public-fixture-evidence-31387585244-1`
+(artifact ID `9062332756`, GitHub digest
+`sha256:f4a06bb022b4c916ff5b1db3b14c8514f69b327095d3f16a1303128952d948b9`,
+expires `2026-11-08T12:20:52Z`). Its 21 files contain one summary and all 20
+expected receipts. The summary SHA-256 is
+`7db42975282375feb5294d5d2be0c3964bfda127b5de4a6c02745185449492cc`.
+
+Independent reconciliation re-read every file through the production public
+receipt validator and compared the summary to the fixed fixture registry. It
+observed:
+
+- `status: PASS`, `10/10` fixtures, and `20/20` passing strict cells;
+- exact main-branch commit, event, run URL, run attempt, and artifact name;
+- exact archive, checkout, adapted marketplace, plugin root and plugin version
+  identities for every fixture;
+- exact capability counts, keys, evidence sources and allowed states for both
+  Codex versions;
+- `DISCOVERED_EFFECTIVE` for every skill, `DISCOVERED_UNTRUSTED` for the five
+  declared hooks, and `DECLARED_ONLY` for every MCP declaration;
+- no unexpected file, capability, app, personal path, temporary path, or
+  invented `VERSION_OR_API_INCOMPATIBLE` cause.
+
 ## Publication gate
 
-Change this decision from `HOLD` only after all 20 strict cells are retained,
-validated against their exact repository/tree/plugin/version/capability
-identities, scanned for private paths, and independently reconciled with the
-immutable inputs above. A code-`1` receipt remains plain `FAIL`/`HOLD`; it does
-not establish a version or API incompatibility without separate causal
-evidence. The private workflow retains its artifact for 90 days. Before a
-public release, the sanitized receipts and summary must also become durable
-release evidence rather than relying on an expiring Actions URL. Stars, a green
-workflow, or a partial matrix do not substitute for those receipts.
+The technical gate is `PASS`. Before the public release is final, attach the
+sanitized receipts and summary as a durable release asset rather than relying
+only on the 90-day Actions artifact. A code-`1` receipt must remain plain
+`FAIL`/`HOLD`; it cannot establish a version or API incompatibility without
+separate causal evidence. This result supports publication of the tool, but it
+does not satisfy the independent-use or ongoing-maintainer gates for a Codex
+for Open Source application.
