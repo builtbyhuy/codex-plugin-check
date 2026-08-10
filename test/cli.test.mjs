@@ -243,7 +243,18 @@ test('required values and exact numeric Codex versions fail before dependencies 
     ['--plugin', 'sample', '--codex-version', '0.147.0'],
     ['--marketplace-root', fixture.marketplaceRoot, '--codex-version', '0.147.0'],
     requiredArgs(fixture, { '--codex-version': 'latest' }),
-    requiredArgs(fixture, { '--codex-version': '0.148.0-beta.1' })
+    requiredArgs(fixture, { '--codex-version': '0.148.0-beta.1' }),
+    [...requiredArgs(fixture), '--expected-plugin-root', 'workspace'],
+    [
+      ...requiredArgs(fixture),
+      '--expected-plugin-root', 'workspace',
+      '--expected-plugin-version', 'latest'
+    ],
+    [
+      ...requiredArgs(fixture),
+      '--expected-plugin-root', '..',
+      '--expected-plugin-version', '1.0.0'
+    ]
   ];
 
   for (const argv of cases) {
@@ -266,7 +277,9 @@ test('env mode verifies Codex first, probes the canonical checkout, and writes d
   const capture = captureIo();
 
   const code = await main(requiredArgs(fixture, {
-    '--marketplace-root': alias
+    '--marketplace-root': alias,
+    '--expected-plugin-root': 'workspace',
+    '--expected-plugin-version': '1.0.0'
   }), capture.io, {
     runProcess: async (command, args, options) => {
       events.push('version');
@@ -290,6 +303,8 @@ test('env mode verifies Codex first, probes the canonical checkout, and writes d
   assert.equal(checkOptions.codex, '/fixture/codex');
   assert.equal(checkOptions.cwd, await realpath(fixture.cwd));
   assert.equal(checkOptions.output, path.resolve(fixture.output));
+  assert.equal(checkOptions.expectedPluginRoot, await realpath(fixture.cwd));
+  assert.equal(checkOptions.expectedPluginVersion, '1.0.0');
   assert.equal(await readFile(fixture.output, 'utf8'), `${JSON.stringify(expected, null, 2)}\n`);
   assert.equal((await stat(fixture.output)).mode & 0o777, 0o600);
   assert.equal(capture.stdout(), 'codex-plugin-check: PASS (sample, Codex 0.147.0)\n');
@@ -535,7 +550,9 @@ test('strict mode invokes one env-mode child with container paths and certifies 
 
   const code = await main(requiredArgs(fixture, {
     '--isolation': 'strict',
-    '--output': strictOutput
+    '--output': strictOutput,
+    '--expected-plugin-root': 'workspace',
+    '--expected-plugin-version': '1.0.0'
   }), capture.io, harness.dependencies);
 
   assert.equal(code, 1);
@@ -553,6 +570,8 @@ test('strict mode invokes one env-mode child with container paths and certifies 
       '/tool/src/cli.mjs',
       '--marketplace-root', '/workspace',
       '--plugin', 'sample',
+      '--expected-plugin-root', '/workspace/workspace',
+      '--expected-plugin-version', '1.0.0',
       '--codex', '/usr/local/bin/codex',
       '--codex-version', '0.147.0',
       '--cwd', '/workspace/workspace',

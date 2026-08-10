@@ -115,7 +115,7 @@ strict gate.
 explicit reason
 `strict released integration requires CODEX_RELEASED_FALSIFIER_OPT_IN=1`.
 
-The complete `npm test` suite observed 122 passing tests, zero failures, and
+The complete `npm test` suite observed 158 passing tests, zero failures, and
 the same one strict Linux test skipped.
 
 With both exact version variables set, `npm run falsify` exited `1` with:

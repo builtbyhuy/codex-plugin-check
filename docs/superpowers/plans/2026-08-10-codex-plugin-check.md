@@ -496,8 +496,9 @@ git commit -m "docs: prepare evidence-bound v0 release"
 Bind exactly ten unique HTTPS GitHub repositories, full commit SHAs, expected
 plugin IDs, marketplace roots, licenses, and adapter IDs. Reject mutable refs,
 path escapes, duplicate rows, extra adapter fields, untrusted workflow events,
-receipt identity drift, missing expected capability kinds, absolute evidence
-paths, and arbitrary tool errors mislabeled as incompatibility.
+receipt identity drift, any missing or substituted capability key/source,
+prepared tree or manifest/version drift, absolute evidence paths, and arbitrary
+tool errors or plain conformance failures mislabeled as incompatibility.
 
 - [x] **Step 2: Verify RED**
 
@@ -532,8 +533,10 @@ hashes, sanitized receipts, run SHA/URL, and artifact identity.
 
 Independently compare the artifact to immutable source expectations. Mark the
 technical public-fixture gate `PASS` only when all ten fixtures have complete
-observations or an evidence-backed version/API incompatibility classification.
-Keep project/publication `HOLD` for any unexplained error or missing row.
+observations. A failed conformance receipt stays `FAIL`/`HOLD` unless separate
+evidence establishes its cause; do not infer a version/API incompatibility from
+exit code `1`. Keep project/publication `HOLD` for any unexplained error or
+missing row.
 
 ### Task 8: Bounded maintainer validation and application hold
 

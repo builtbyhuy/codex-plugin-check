@@ -169,6 +169,7 @@ test('public fixture matrix runs only from trusted main pushes or manual dispatc
   const upload = stepUsing(source, UPLOAD);
   assert.equal(scalar(upload.source, 'path', 10), 'artifacts/public-fixtures');
   assert.equal(scalar(upload.source, 'if-no-files-found', 10), 'error');
+  assert.equal(scalar(upload.source, 'retention-days', 10), '90');
   assert.ok(upload.source.includes('        if: always()'));
   assert.deepEqual(
     steps(source).filter((step) => step.source.some((line) => line.includes('uses:'))).length,

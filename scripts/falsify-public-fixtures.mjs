@@ -196,11 +196,175 @@ const FIXED_FIXTURES = [
   }
 ];
 
+function fixedCapabilities(rows) {
+  return rows.map(([kind, key, source]) => ({ kind, key, source }));
+}
+
+const FIXED_PLUGIN_CONTRACTS = {
+  bitrouter: {
+    marketplaceManifestPath: '.agents/plugins/marketplace.json',
+    pluginRoot: '.',
+    pluginManifestPath: '.codex-plugin/plugin.json',
+    pluginVersion: '0.1.0',
+    expectedCheckoutSha256: 'ba604cb6d8313594bebbdbc899f930195e92f6c12fa14371764f7dec2e25d4c9',
+    expectedMarketplaceSha256: 'ba604cb6d8313594bebbdbc899f930195e92f6c12fa14371764f7dec2e25d4c9',
+    expectedCapabilities: fixedCapabilities([
+      ['mcp', 'bitrouter', 'plugin/read'],
+      ['skill', 'bitrouter:bitrouter', 'plugin/read + skills/list']
+    ])
+  },
+  'oh-my-cassette': {
+    marketplaceManifestPath: '.agents/plugins/marketplace.json',
+    pluginRoot: '.',
+    pluginManifestPath: '.codex-plugin/plugin.json',
+    pluginVersion: '0.4.14',
+    expectedCheckoutSha256: '9dffb7f24db16606eeb44f7a23746073716069e63e4cf58a07631c02e1f57177',
+    expectedMarketplaceSha256: '32c159545ca3626c13dfae8f1c833e456584df10c204060539475fd6c301b8e8',
+    expectedCapabilities: fixedCapabilities([
+      ['mcp', 'cassette', 'plugin/read'],
+      ['skill', 'oh-my-cassette:cassette-model', 'plugin/read + skills/list'],
+      ['skill', 'oh-my-cassette:cassette-video-edit', 'plugin/read + skills/list']
+    ])
+  },
+  watercooler: {
+    marketplaceManifestPath: '.agents/plugins/marketplace.json',
+    pluginRoot: 'plugins/codex/watercooler',
+    pluginManifestPath: '.codex-plugin/plugin.json',
+    pluginVersion: '0.5.6',
+    expectedCheckoutSha256: 'ad91f57b0605df94a1361aa67c3b35314f5357583aaef7f364b397da5a00ea19',
+    expectedMarketplaceSha256: 'ad91f57b0605df94a1361aa67c3b35314f5357583aaef7f364b397da5a00ea19',
+    expectedCapabilities: fixedCapabilities([
+      ['mcp', 'watercooler', 'plugin/read'],
+      ['skill', 'watercooler:find-related', 'plugin/read + skills/list'],
+      ['skill', 'watercooler:recall', 'plugin/read + skills/list'],
+      ['skill', 'watercooler:search-threads', 'plugin/read + skills/list'],
+      ['skill', 'watercooler:threads', 'plugin/read + skills/list'],
+      ['skill', 'watercooler:update-agent-context', 'plugin/read + skills/list'],
+      ['skill', 'watercooler:watercooler-health', 'plugin/read + skills/list'],
+      ['skill', 'watercooler:watercooler-onboarding', 'plugin/read + skills/list']
+    ])
+  },
+  commercetools: {
+    marketplaceManifestPath: '.agents/plugins/marketplace.json',
+    pluginRoot: '.agents/plugins/commercetools',
+    pluginManifestPath: '.codex-plugin/plugin.json',
+    pluginVersion: '0.14.0',
+    expectedCheckoutSha256: '749bea75c483aecfcc71dc04919a13e170953996eeba9dfdff16c4f5f49073c0',
+    expectedMarketplaceSha256: '749bea75c483aecfcc71dc04919a13e170953996eeba9dfdff16c4f5f49073c0',
+    expectedCapabilities: fixedCapabilities([
+      ['mcp', 'commerce-mcp', 'plugin/read'],
+      ['mcp', 'commercetools-knowledge', 'plugin/read'],
+      ['skill', 'commercetools:commercetools-checkout', 'plugin/read + skills/list'],
+      ['skill', 'commercetools:commercetools-commerce-patterns', 'plugin/read + skills/list'],
+      ['skill', 'commercetools:commercetools-connect', 'plugin/read + skills/list'],
+      ['skill', 'commercetools:commercetools-platform', 'plugin/read + skills/list'],
+      ['skill', 'commercetools:commercetools-storefront', 'plugin/read + skills/list']
+    ])
+  },
+  ctx: {
+    marketplaceManifestPath: '.agents/plugins/marketplace.json',
+    pluginRoot: '.',
+    pluginManifestPath: '.codex-plugin/plugin.json',
+    pluginVersion: '0.4.0',
+    expectedCheckoutSha256: '7f6934a57be05a126b968a5c5d346fb9d3150bdb6a57e199d2274204c94337eb',
+    expectedMarketplaceSha256: '7b3212dbd512ee0bbf7f8c3c2b69c86bdba41ed55f9f71e5f69e63dc0cce49f7',
+    expectedCapabilities: fixedCapabilities([
+      ['hook', 'ctx@ctx-local:hooks/hooks.json:post_tool_use:0:0', 'plugin/read + hooks/list'],
+      ['hook', 'ctx@ctx-local:hooks/hooks.json:session_start:0:0', 'plugin/read + hooks/list'],
+      ['hook', 'ctx@ctx-local:hooks/hooks.json:stop:0:0', 'plugin/read + hooks/list'],
+      ['skill', 'ctx:ctx', 'plugin/read + skills/list']
+    ])
+  },
+  agentmail: {
+    marketplaceManifestPath: '.agents/plugins/marketplace.json',
+    pluginRoot: '.',
+    pluginManifestPath: '.codex-plugin/plugin.json',
+    pluginVersion: '0.3.0',
+    expectedCheckoutSha256: '97a82ec2aaa745663a6baa0dab16c476858d4ddc47230f2906b26eafbffa6669',
+    expectedMarketplaceSha256: '97a82ec2aaa745663a6baa0dab16c476858d4ddc47230f2906b26eafbffa6669',
+    expectedCapabilities: fixedCapabilities([
+      ['mcp', 'agentmail', 'plugin/read'],
+      ['skill', 'agentmail:agent-email-patterns', 'plugin/read + skills/list'],
+      ['skill', 'agentmail:agentmail', 'plugin/read + skills/list'],
+      ['skill', 'agentmail:agentmail-cli', 'plugin/read + skills/list'],
+      ['skill', 'agentmail:agentmail-mcp', 'plugin/read + skills/list'],
+      ['skill', 'agentmail:agentmail-toolkit', 'plugin/read + skills/list'],
+      ['skill', 'agentmail:check-email', 'plugin/read + skills/list'],
+      ['skill', 'agentmail:manage-inboxes', 'plugin/read + skills/list'],
+      ['skill', 'agentmail:send-email', 'plugin/read + skills/list']
+    ])
+  },
+  sarathi: {
+    marketplaceManifestPath: '.agents/plugins/marketplace.json',
+    pluginRoot: '.',
+    pluginManifestPath: '.codex-plugin/plugin.json',
+    pluginVersion: '0.6.0',
+    expectedCheckoutSha256: 'da617a7857381c86ef963f85185a1afef851369a52cb4630d9360c21df904599',
+    expectedMarketplaceSha256: 'da617a7857381c86ef963f85185a1afef851369a52cb4630d9360c21df904599',
+    expectedCapabilities: fixedCapabilities([
+      ['skill', 'sarathi:sarathi', 'plugin/read + skills/list']
+    ])
+  },
+  'cc-plugin-codex': {
+    marketplaceManifestPath: '.agents/plugins/marketplace.json',
+    pluginRoot: 'plugins/cc-plugin-codex',
+    pluginManifestPath: '.codex-plugin/plugin.json',
+    pluginVersion: '0.1.1',
+    expectedCheckoutSha256: '1da66cadeb01bb4b57f63e522fdc763df98d5ba6e2034e04599b02c1e394daed',
+    expectedMarketplaceSha256: '1da66cadeb01bb4b57f63e522fdc763df98d5ba6e2034e04599b02c1e394daed',
+    expectedCapabilities: fixedCapabilities([
+      ['hook', 'cc-plugin-codex@cc-plugin-codex:hooks/hooks.json:session_end:0:0', 'plugin/read + hooks/list'],
+      ['hook', 'cc-plugin-codex@cc-plugin-codex:hooks/hooks.json:stop:0:0', 'plugin/read + hooks/list'],
+      ['skill', 'cc-plugin-codex:claude-adversarial-review', 'plugin/read + skills/list'],
+      ['skill', 'cc-plugin-codex:claude-cancel', 'plugin/read + skills/list'],
+      ['skill', 'cc-plugin-codex:claude-cli-runtime', 'plugin/read + skills/list'],
+      ['skill', 'cc-plugin-codex:claude-prompting', 'plugin/read + skills/list'],
+      ['skill', 'cc-plugin-codex:claude-rescue', 'plugin/read + skills/list'],
+      ['skill', 'cc-plugin-codex:claude-result', 'plugin/read + skills/list'],
+      ['skill', 'cc-plugin-codex:claude-result-handling', 'plugin/read + skills/list'],
+      ['skill', 'cc-plugin-codex:claude-review', 'plugin/read + skills/list'],
+      ['skill', 'cc-plugin-codex:claude-setup', 'plugin/read + skills/list'],
+      ['skill', 'cc-plugin-codex:claude-status', 'plugin/read + skills/list'],
+      ['skill', 'cc-plugin-codex:claude-transfer', 'plugin/read + skills/list']
+    ])
+  },
+  'speedy-skills': {
+    marketplaceManifestPath: '.claude-plugin/marketplace.json',
+    pluginRoot: 'plugins/example-minimal',
+    pluginManifestPath: '.claude-plugin/plugin.json',
+    pluginVersion: '0.1.0',
+    expectedCheckoutSha256: 'd39797da9765bf1d822887dc6735f186d4bfc199279558817cf6eef375aab1c2',
+    expectedMarketplaceSha256: 'd39797da9765bf1d822887dc6735f186d4bfc199279558817cf6eef375aab1c2',
+    expectedCapabilities: fixedCapabilities([
+      ['skill', 'example-minimal:summarizing-git-log', 'plugin/read + skills/list']
+    ])
+  },
+  'roadrunner-admin': {
+    marketplaceManifestPath: '.agents/plugins/marketplace.json',
+    pluginRoot: 'plugins/roadrunner-admin',
+    pluginManifestPath: '.codex-plugin/plugin.json',
+    pluginVersion: '0.1.0',
+    expectedCheckoutSha256: '33eaa8e5aef5449d496771317d1f40205dabf06fa6d6041e1e142e61e651f5d1',
+    expectedMarketplaceSha256: '33eaa8e5aef5449d496771317d1f40205dabf06fa6d6041e1e142e61e651f5d1',
+    expectedCapabilities: fixedCapabilities([
+      ['mcp', 'roadrunner-admin', 'plugin/read'],
+      ['skill', 'roadrunner-admin:roadrunner-admin', 'plugin/read + skills/list']
+    ])
+  }
+};
+
+for (const fixture of FIXED_FIXTURES) {
+  Object.assign(fixture, FIXED_PLUGIN_CONTRACTS[fixture.evidenceId]);
+}
+
 export const PUBLIC_FIXTURES = Object.freeze(
   FIXED_FIXTURES.map((fixture) => Object.freeze({
     ...fixture,
     licensePaths: Object.freeze([...fixture.licensePaths]),
-    expectedKinds: Object.freeze([...fixture.expectedKinds])
+    expectedKinds: Object.freeze([...fixture.expectedKinds]),
+    expectedCapabilities: Object.freeze(fixture.expectedCapabilities.map((capability) => (
+      Object.freeze({ ...capability })
+    )))
   }))
 );
 
@@ -232,6 +396,49 @@ export function validateFixtureDefinitions(fixtures) {
   return fixtures;
 }
 
+function githubProvenanceFromEnvironment(env) {
+  const keys = [
+    'GITHUB_ACTIONS',
+    'GITHUB_EVENT_NAME',
+    'GITHUB_REF',
+    'GITHUB_REPOSITORY',
+    'GITHUB_RUN_ATTEMPT',
+    'GITHUB_RUN_ID',
+    'GITHUB_SERVER_URL',
+    'GITHUB_SHA'
+  ];
+  const hasGithubValue = keys.some((key) => (
+    typeof env[key] === 'string' && env[key] !== ''
+  ));
+  if (!hasGithubValue) return null;
+  if (
+    env.GITHUB_ACTIONS !== 'true' ||
+    !['push', 'workflow_dispatch'].includes(env.GITHUB_EVENT_NAME) ||
+    env.GITHUB_REF !== 'refs/heads/main' ||
+    env.GITHUB_REPOSITORY !== 'builtbyhuy/codex-plugin-check' ||
+    !/^[1-9]\d*$/.test(env.GITHUB_RUN_ATTEMPT ?? '') ||
+    !/^[1-9]\d*$/.test(env.GITHUB_RUN_ID ?? '') ||
+    env.GITHUB_SERVER_URL !== 'https://github.com' ||
+    !COMMIT_SHA.test(env.GITHUB_SHA ?? '')
+  ) {
+    throw new Error('GitHub Actions provenance was incomplete or outside trusted main');
+  }
+  const runUrl = `${env.GITHUB_SERVER_URL}/${env.GITHUB_REPOSITORY}/actions/runs/${
+    env.GITHUB_RUN_ID
+  }`;
+  return {
+    provider: 'github-actions',
+    repository: env.GITHUB_REPOSITORY,
+    commit: env.GITHUB_SHA,
+    ref: env.GITHUB_REF,
+    event: env.GITHUB_EVENT_NAME,
+    runId: env.GITHUB_RUN_ID,
+    runAttempt: env.GITHUB_RUN_ATTEMPT,
+    runUrl,
+    artifactName: `public-fixture-evidence-${env.GITHUB_RUN_ID}-${env.GITHUB_RUN_ATTEMPT}`
+  };
+}
+
 export function publicFixtureOptionsFromEnvironment(env = process.env, cwd = process.cwd()) {
   if (
     env.CODEX_CURRENT_VERSION !== CODEX_VERSIONS[0] ||
@@ -261,7 +468,8 @@ export function publicFixtureOptionsFromEnvironment(env = process.env, cwd = pro
     architecture: process.arch,
     outputBoundary,
     outputRoot,
-    platform: process.platform
+    platform: process.platform,
+    provenance: githubProvenanceFromEnvironment(env)
   };
 }
 
@@ -707,7 +915,10 @@ async function hashDirectory(root) {
   const hash = createHash('sha256');
   async function visit(directory, relativeDirectory = '') {
     const entries = await readdir(directory, { withFileTypes: true });
-    entries.sort((left, right) => left.name.localeCompare(right.name, 'en'));
+    entries.sort((left, right) => Buffer.compare(
+      Buffer.from(left.name, 'utf8'),
+      Buffer.from(right.name, 'utf8')
+    ));
     for (const entry of entries) {
       const relative = relativeDirectory === ''
         ? entry.name
@@ -740,7 +951,118 @@ async function assertRegularFixtureFile(checkoutRoot, relative, label) {
   if (metadata.isSymbolicLink() || !metadata.isFile()) {
     throw new Error(`${label} must be a regular file, not a symlink`);
   }
+  if (await realpath(absolute) !== absolute) {
+    throw new Error(`${label} must not traverse a symlink`);
+  }
   return absolute;
+}
+
+function parseManifestObject(bytes, label) {
+  let parsed;
+  try {
+    parsed = JSON.parse(bytes);
+  } catch (cause) {
+    throw new Error(`${label} was not valid JSON`, { cause });
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`${label} must be a JSON object`);
+  }
+  return parsed;
+}
+
+function localPluginSourcePath(source) {
+  if (typeof source === 'string') return source;
+  if (
+    source !== null &&
+    typeof source === 'object' &&
+    !Array.isArray(source) &&
+    source.source === 'local' &&
+    typeof source.path === 'string'
+  ) {
+    return source.path;
+  }
+  throw new Error('Marketplace plugin source must be a fixed local path');
+}
+
+export async function validateStaticPluginContract(fixture, marketplaceRoot) {
+  assertFixedFixture(fixture);
+  const canonicalMarketplaceRoot = await realpath(marketplaceRoot);
+  if (canonicalMarketplaceRoot !== path.resolve(marketplaceRoot)) {
+    throw new Error('Marketplace root must not traverse a symlink');
+  }
+  const marketplaceManifestFile = await assertRegularFixtureFile(
+    canonicalMarketplaceRoot,
+    fixture.marketplaceManifestPath,
+    'Marketplace manifest'
+  );
+  const marketplaceManifest = parseManifestObject(
+    await readFile(marketplaceManifestFile, 'utf8'),
+    'Marketplace manifest'
+  );
+  if (marketplaceManifest.name !== fixture.marketplace) {
+    throw new Error('Marketplace manifest returned the wrong marketplace name');
+  }
+  if (!Array.isArray(marketplaceManifest.plugins)) {
+    throw new Error('Marketplace manifest must contain a plugin list');
+  }
+  const pluginEntries = marketplaceManifest.plugins.filter(
+    (entry) => entry !== null && typeof entry === 'object' && entry.name === fixture.plugin
+  );
+  if (pluginEntries.length !== 1) {
+    throw new Error('Marketplace manifest must contain exactly one expected plugin entry');
+  }
+  const sourcePath = localPluginSourcePath(pluginEntries[0].source);
+  if (
+    sourcePath === '' ||
+    path.isAbsolute(sourcePath) ||
+    sourcePath.includes('\\') ||
+    sourcePath.includes('\0')
+  ) {
+    throw new Error('Marketplace plugin source path must be a safe relative path');
+  }
+  const requestedPluginRoot = path.resolve(canonicalMarketplaceRoot, sourcePath);
+  const expectedPluginRoot = path.resolve(
+    canonicalMarketplaceRoot,
+    ...fixture.pluginRoot.split('/')
+  );
+  if (
+    requestedPluginRoot !== expectedPluginRoot ||
+    !pathIsWithin(requestedPluginRoot, canonicalMarketplaceRoot)
+  ) {
+    throw new Error('Marketplace plugin source did not match the audited plugin root');
+  }
+  const canonicalPluginRoot = await realpath(requestedPluginRoot);
+  const pluginRootMetadata = await lstat(canonicalPluginRoot);
+  if (
+    canonicalPluginRoot !== requestedPluginRoot ||
+    !pluginRootMetadata.isDirectory() ||
+    !pathIsWithin(canonicalPluginRoot, canonicalMarketplaceRoot)
+  ) {
+    throw new Error('Audited plugin root must be a real directory inside the marketplace');
+  }
+  const pluginManifestFile = await assertRegularFixtureFile(
+    canonicalPluginRoot,
+    fixture.pluginManifestPath,
+    'Plugin manifest'
+  );
+  const pluginManifest = parseManifestObject(
+    await readFile(pluginManifestFile, 'utf8'),
+    'Plugin manifest'
+  );
+  if (pluginManifest.name !== fixture.plugin) {
+    throw new Error('Plugin manifest returned the wrong plugin name');
+  }
+  if (pluginManifest.version !== fixture.pluginVersion) {
+    throw new Error('Plugin manifest returned the wrong plugin version');
+  }
+  return {
+    marketplaceManifestPath: fixture.marketplaceManifestPath,
+    marketplace: fixture.marketplace,
+    plugin: fixture.plugin,
+    pluginRoot: fixture.pluginRoot,
+    pluginManifestPath: fixture.pluginManifestPath,
+    pluginVersion: fixture.pluginVersion
+  };
 }
 
 export async function preparePublicFixture({ fixture, temporaryRoot }, dependencies = {}) {
@@ -798,12 +1120,14 @@ export async function preparePublicFixture({ fixture, temporaryRoot }, dependenc
     throw new Error('Marketplace root must be an owned fixture directory');
   }
   await auditExtractedSymlinks(checkoutRoot);
+  const pluginContract = await validateStaticPluginContract(fixture, marketplaceRoot);
   return {
     archiveSha256,
     checkoutSha256,
     marketplaceSha256: await hashDirectory(marketplaceRoot),
     marketplaceRoot,
-    adapter
+    adapter,
+    pluginContract
   };
 }
 
@@ -841,19 +1165,46 @@ export function validatePublicReceipt(receipt, options) {
   if (receipt.plugin.marketplace !== fixture.marketplace) {
     throw new Error(`Public fixture ${fixture.repository} returned the wrong marketplace identity`);
   }
-  const expectedKinds = new Set(fixture.expectedKinds);
-  const observedKinds = new Set();
+  const markers = options.personalMarkers ?? [];
+  const values = allStringValues(receipt);
+  for (const marker of markers) {
+    if (typeof marker === 'string' && marker !== '' && values.some((value) => value.includes(marker))) {
+      throw new Error(`Public fixture ${fixture.repository} receipt leaked a personal host path`);
+    }
+  }
+  for (const value of values) {
+    if (
+      value !== '/workspace' &&
+      (/^(?:\/Users\/|\/home\/)/.test(value) || /^[A-Za-z]:[\\/]/.test(value))
+    ) {
+      throw new Error(`Public fixture ${fixture.repository} receipt leaked an absolute host path`);
+    }
+  }
+  const expectedCapabilities = new Map(
+    fixture.expectedCapabilities.map((capability) => [
+      `${capability.kind}\0${capability.key}`,
+      capability
+    ])
+  );
+  if (receipt.capabilities.length !== expectedCapabilities.size) {
+    throw new Error(
+      `Public fixture ${fixture.repository} returned the wrong capability count`
+    );
+  }
   const capabilityKeys = new Set();
   for (const capability of receipt.capabilities) {
-    if (!expectedKinds.has(capability.kind)) {
-      throw new Error(`Public fixture ${fixture.repository} returned an unexpected capability kind`);
-    }
     const identity = `${capability.kind}\0${capability.key}`;
     if (capabilityKeys.has(identity)) {
       throw new Error(`Public fixture ${fixture.repository} returned a duplicate capability`);
     }
+    const expectedCapability = expectedCapabilities.get(identity);
+    if (expectedCapability === undefined) {
+      throw new Error(`Public fixture ${fixture.repository} returned an unexpected capability key`);
+    }
+    if (capability.source !== expectedCapability.source) {
+      throw new Error(`Public fixture ${fixture.repository} returned the wrong capability source`);
+    }
     capabilityKeys.add(identity);
-    observedKinds.add(capability.kind);
     if (
       capability.kind === 'skill' &&
       !['DISCOVERED_EFFECTIVE', ...(expectedExitCode === 1 ? ['MISSING'] : [])]
@@ -879,24 +1230,9 @@ export function validatePublicReceipt(receipt, options) {
       throw new Error(`Public fixture ${fixture.repository} MCP capability made a runtime claim`);
     }
   }
-  for (const kind of expectedKinds) {
-    if (!observedKinds.has(kind)) {
-      throw new Error(`Public fixture ${fixture.repository} is missing capability kind ${kind}`);
-    }
-  }
-  const markers = options.personalMarkers ?? [];
-  const values = allStringValues(receipt);
-  for (const marker of markers) {
-    if (typeof marker === 'string' && marker !== '' && values.some((value) => value.includes(marker))) {
-      throw new Error(`Public fixture ${fixture.repository} receipt leaked a personal host path`);
-    }
-  }
-  for (const value of values) {
-    if (
-      value !== '/workspace' &&
-      (/^(?:\/Users\/|\/home\/)/.test(value) || /^[A-Za-z]:[\\/]/.test(value))
-    ) {
-      throw new Error(`Public fixture ${fixture.repository} receipt leaked an absolute host path`);
+  for (const identity of expectedCapabilities.keys()) {
+    if (!capabilityKeys.has(identity)) {
+      throw new Error(`Public fixture ${fixture.repository} is missing an expected capability`);
     }
   }
   return receipt;
@@ -1101,6 +1437,8 @@ export async function probePublicFixtureCell(options, dependencies = {}) {
     const code = await cliMain([
       '--marketplace-root', marketplaceRoot,
       '--plugin', options.fixture.plugin,
+      '--expected-plugin-root', options.fixture.pluginRoot,
+      '--expected-plugin-version', options.fixture.pluginVersion,
       '--codex-version', options.version,
       '--cwd', marketplaceRoot,
       '--output', stagedPath,
@@ -1139,9 +1477,20 @@ export async function probePublicFixtureCell(options, dependencies = {}) {
   }
 }
 
-function inspectDockerReal() {
+export function inspectDockerReal(dependencies = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn('docker', ['version', '--format', '{{.Server.Version}}'], {
+    const spawnProcess = dependencies.spawnProcess ?? spawn;
+    const timeoutMs = dependencies.timeoutMs ?? DOCKER_TIMEOUT_MS;
+    const killGraceMs = dependencies.killGraceMs ?? 100;
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
+      reject(new Error('Docker inspection timeout must be a positive integer'));
+      return;
+    }
+    if (!Number.isSafeInteger(killGraceMs) || killGraceMs <= 0) {
+      reject(new Error('Docker inspection kill grace must be a positive integer'));
+      return;
+    }
+    const child = spawnProcess('docker', ['version', '--format', '{{.Server.Version}}'], {
       shell: false,
       stdio: ['ignore', 'pipe', 'pipe']
     });
@@ -1149,10 +1498,14 @@ function inspectDockerReal() {
     const stderr = [];
     let outputBytes = 0;
     let forcedError;
+    let killTimer;
     let settled = false;
     const terminate = (cause) => {
       forcedError ??= cause;
+      if (killTimer !== undefined) return;
       child.kill('SIGTERM');
+      killTimer = setTimeout(() => child.kill('SIGKILL'), killGraceMs);
+      killTimer.unref?.();
     };
     for (const [stream, chunks] of [[child.stdout, stdout], [child.stderr, stderr]]) {
       stream.on('data', (chunk) => {
@@ -1165,20 +1518,22 @@ function inspectDockerReal() {
       });
     }
     const timer = setTimeout(
-      () => terminate(new Error(`Docker inspection timed out after ${DOCKER_TIMEOUT_MS}ms`)),
-      DOCKER_TIMEOUT_MS
+      () => terminate(new Error(`Docker inspection timed out after ${timeoutMs}ms`)),
+      timeoutMs
     );
     timer.unref?.();
     child.once('error', (cause) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      clearTimeout(killTimer);
       reject(cause);
     });
     child.once('close', (code) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      clearTimeout(killTimer);
       if (forcedError) {
         reject(forcedError);
         return;
@@ -1241,6 +1596,12 @@ function validatePreparedFixture(prepared, fixture, temporaryRoot) {
       throw new Error(`Prepared public fixture is missing ${field}`);
     }
   }
+  if (prepared.checkoutSha256 !== fixture.expectedCheckoutSha256) {
+    throw new Error('Prepared public fixture checkout hash did not match the audited tree');
+  }
+  if (prepared.marketplaceSha256 !== fixture.expectedMarketplaceSha256) {
+    throw new Error('Prepared public fixture marketplace hash did not match the audited tree');
+  }
   if (fixture.adapterId === 'none') {
     if (prepared.adapter !== null) throw new Error('DIRECT fixture must not record an adapter');
   } else if (
@@ -1252,6 +1613,25 @@ function validatePreparedFixture(prepared, fixture, temporaryRoot) {
   }
   if (!pathIsWithin(prepared.marketplaceRoot, temporaryRoot)) {
     throw new Error('Prepared marketplace root escaped owned temporary state');
+  }
+  const expectedContract = {
+    marketplaceManifestPath: fixture.marketplaceManifestPath,
+    marketplace: fixture.marketplace,
+    plugin: fixture.plugin,
+    pluginRoot: fixture.pluginRoot,
+    pluginManifestPath: fixture.pluginManifestPath,
+    pluginVersion: fixture.pluginVersion
+  };
+  if (
+    prepared.pluginContract === null ||
+    typeof prepared.pluginContract !== 'object' ||
+    Array.isArray(prepared.pluginContract) ||
+    Object.keys(prepared.pluginContract).length !== Object.keys(expectedContract).length ||
+    Object.entries(expectedContract).some(
+      ([key, value]) => prepared.pluginContract[key] !== value
+    )
+  ) {
+    throw new Error('Prepared public fixture plugin contract did not match the audited identity');
   }
   return prepared;
 }
@@ -1265,11 +1645,20 @@ function summaryFixture(fixture, prepared, receipts) {
     classification: fixture.classification,
     adapterId: fixture.adapterId,
     marketplaceRoot: fixture.marketplaceRoot,
+    marketplaceManifestPath: fixture.marketplaceManifestPath,
     plugin: fixture.plugin,
+    pluginRoot: fixture.pluginRoot,
+    pluginManifestPath: fixture.pluginManifestPath,
+    pluginVersion: fixture.pluginVersion,
     marketplace: fixture.marketplace,
     license: fixture.license,
     licensePaths: [...fixture.licensePaths],
     expectedKinds: [...fixture.expectedKinds],
+    expectedCapabilities: fixture.expectedCapabilities.map(({ kind, key, source }) => ({
+      kind,
+      key,
+      source
+    })),
     archiveUrl: fixture.archiveUrl,
     archiveSha256: prepared.archiveSha256,
     checkoutSha256: prepared.checkoutSha256,
@@ -1299,8 +1688,8 @@ export async function runPublicFixtureMatrix(options, dependencies = {}) {
     ownedOutput = await createOwnedOutputRoot(options.outputRoot, options.outputBoundary);
     temporaryRoot = await realpath(await makeTemporaryRoot());
     const fixturesSummary = [];
-    let compatibleCells = 0;
-    let incompatibleCells = 0;
+    let passedCells = 0;
+    let failedCells = 0;
     for (const fixture of fixtures) {
       const prepared = validatePreparedFixture(
         await prepareFixture({ fixture, temporaryRoot }),
@@ -1334,9 +1723,9 @@ export async function runPublicFixtureMatrix(options, dependencies = {}) {
         }));
         await assertOwnedOutputRoot(ownedOutput.outputRoot, ownedOutput.boundary);
         await writeAtomicEvidenceJson(ownedOutput, evidencePath, receipt);
-        const outcome = staged.code === 0 ? 'PASS' : 'VERSION_OR_API_INCOMPATIBLE';
-        if (outcome === 'PASS') compatibleCells += 1;
-        else incompatibleCells += 1;
+        const outcome = staged.code === 0 ? 'PASS' : 'FAIL';
+        if (outcome === 'PASS') passedCells += 1;
+        else failedCells += 1;
         receipts.push({ version, receiptPath: evidencePath, outcome });
       }
       fixturesSummary.push(summaryFixture(fixture, prepared, receipts));
@@ -1345,16 +1734,17 @@ export async function runPublicFixtureMatrix(options, dependencies = {}) {
     temporaryRoot = undefined;
     const summary = {
       schemaVersion: '0.1.0',
-      status: incompatibleCells === 0 ? 'PASS' : 'HOLD',
+      status: failedCells === 0 ? 'PASS' : 'HOLD',
       outputRoot: '.',
       platform: `linux-${options.architecture}`,
+      provenance: options.provenance ?? null,
       versions: [...versions],
       gate: {
         observed: fixtures.length,
         required: 10,
         cells: fixtures.length * versions.length,
-        compatibleCells,
-        incompatibleCells
+        passedCells,
+        failedCells
       },
       fixtures: fixturesSummary
     };

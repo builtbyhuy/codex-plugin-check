@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { EventEmitter } from 'node:events';
 import {
   access,
   lstat,
@@ -14,6 +15,7 @@ import {
 } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { PassThrough } from 'node:stream';
 import test from 'node:test';
 import { gzipSync } from 'node:zlib';
 
@@ -24,6 +26,7 @@ import {
   CODEX_VERSIONS,
   extractArchiveEntries,
   fetchPublicArchive,
+  inspectDockerReal,
   parseTarGzipArchive,
   preparePublicFixture,
   probePublicFixtureCell,
@@ -35,6 +38,7 @@ import {
   validateFixtureDefinitions,
   validatePublicReceipt,
   validateRelativeEvidencePath,
+  validateStaticPluginContract,
   writeAtomicEvidenceJson
 } from '../scripts/falsify-public-fixtures.mjs';
 
@@ -94,6 +98,130 @@ const FIXED_DETAILS = [
   ['roadrunner-admin', '.', 'roadrunner-admin', 'roadrunner', ['LICENSE'], ['skill', 'mcp']]
 ];
 
+const FIXED_PLUGIN_CONTRACTS = [
+  [
+    'bitrouter', '.agents/plugins/marketplace.json', '.', '.codex-plugin/plugin.json', '0.1.0',
+    'ba604cb6d8313594bebbdbc899f930195e92f6c12fa14371764f7dec2e25d4c9',
+    'ba604cb6d8313594bebbdbc899f930195e92f6c12fa14371764f7dec2e25d4c9',
+    [
+      ['mcp', 'bitrouter', 'plugin/read'],
+      ['skill', 'bitrouter:bitrouter', 'plugin/read + skills/list']
+    ]
+  ],
+  [
+    'oh-my-cassette', '.agents/plugins/marketplace.json', '.', '.codex-plugin/plugin.json', '0.4.14',
+    '9dffb7f24db16606eeb44f7a23746073716069e63e4cf58a07631c02e1f57177',
+    '32c159545ca3626c13dfae8f1c833e456584df10c204060539475fd6c301b8e8',
+    [
+      ['mcp', 'cassette', 'plugin/read'],
+      ['skill', 'oh-my-cassette:cassette-model', 'plugin/read + skills/list'],
+      ['skill', 'oh-my-cassette:cassette-video-edit', 'plugin/read + skills/list']
+    ]
+  ],
+  [
+    'watercooler', '.agents/plugins/marketplace.json', 'plugins/codex/watercooler',
+    '.codex-plugin/plugin.json', '0.5.6',
+    'ad91f57b0605df94a1361aa67c3b35314f5357583aaef7f364b397da5a00ea19',
+    'ad91f57b0605df94a1361aa67c3b35314f5357583aaef7f364b397da5a00ea19',
+    [
+      ['mcp', 'watercooler', 'plugin/read'],
+      ['skill', 'watercooler:find-related', 'plugin/read + skills/list'],
+      ['skill', 'watercooler:recall', 'plugin/read + skills/list'],
+      ['skill', 'watercooler:search-threads', 'plugin/read + skills/list'],
+      ['skill', 'watercooler:threads', 'plugin/read + skills/list'],
+      ['skill', 'watercooler:update-agent-context', 'plugin/read + skills/list'],
+      ['skill', 'watercooler:watercooler-health', 'plugin/read + skills/list'],
+      ['skill', 'watercooler:watercooler-onboarding', 'plugin/read + skills/list']
+    ]
+  ],
+  [
+    'commercetools', '.agents/plugins/marketplace.json', '.agents/plugins/commercetools',
+    '.codex-plugin/plugin.json', '0.14.0',
+    '749bea75c483aecfcc71dc04919a13e170953996eeba9dfdff16c4f5f49073c0',
+    '749bea75c483aecfcc71dc04919a13e170953996eeba9dfdff16c4f5f49073c0',
+    [
+      ['mcp', 'commerce-mcp', 'plugin/read'],
+      ['mcp', 'commercetools-knowledge', 'plugin/read'],
+      ['skill', 'commercetools:commercetools-checkout', 'plugin/read + skills/list'],
+      ['skill', 'commercetools:commercetools-commerce-patterns', 'plugin/read + skills/list'],
+      ['skill', 'commercetools:commercetools-connect', 'plugin/read + skills/list'],
+      ['skill', 'commercetools:commercetools-platform', 'plugin/read + skills/list'],
+      ['skill', 'commercetools:commercetools-storefront', 'plugin/read + skills/list']
+    ]
+  ],
+  [
+    'ctx', '.agents/plugins/marketplace.json', '.', '.codex-plugin/plugin.json', '0.4.0',
+    '7f6934a57be05a126b968a5c5d346fb9d3150bdb6a57e199d2274204c94337eb',
+    '7b3212dbd512ee0bbf7f8c3c2b69c86bdba41ed55f9f71e5f69e63dc0cce49f7',
+    [
+      ['hook', 'ctx@ctx-local:hooks/hooks.json:post_tool_use:0:0', 'plugin/read + hooks/list'],
+      ['hook', 'ctx@ctx-local:hooks/hooks.json:session_start:0:0', 'plugin/read + hooks/list'],
+      ['hook', 'ctx@ctx-local:hooks/hooks.json:stop:0:0', 'plugin/read + hooks/list'],
+      ['skill', 'ctx:ctx', 'plugin/read + skills/list']
+    ]
+  ],
+  [
+    'agentmail', '.agents/plugins/marketplace.json', '.', '.codex-plugin/plugin.json', '0.3.0',
+    '97a82ec2aaa745663a6baa0dab16c476858d4ddc47230f2906b26eafbffa6669',
+    '97a82ec2aaa745663a6baa0dab16c476858d4ddc47230f2906b26eafbffa6669',
+    [
+      ['mcp', 'agentmail', 'plugin/read'],
+      ['skill', 'agentmail:agent-email-patterns', 'plugin/read + skills/list'],
+      ['skill', 'agentmail:agentmail', 'plugin/read + skills/list'],
+      ['skill', 'agentmail:agentmail-cli', 'plugin/read + skills/list'],
+      ['skill', 'agentmail:agentmail-mcp', 'plugin/read + skills/list'],
+      ['skill', 'agentmail:agentmail-toolkit', 'plugin/read + skills/list'],
+      ['skill', 'agentmail:check-email', 'plugin/read + skills/list'],
+      ['skill', 'agentmail:manage-inboxes', 'plugin/read + skills/list'],
+      ['skill', 'agentmail:send-email', 'plugin/read + skills/list']
+    ]
+  ],
+  [
+    'sarathi', '.agents/plugins/marketplace.json', '.', '.codex-plugin/plugin.json', '0.6.0',
+    'da617a7857381c86ef963f85185a1afef851369a52cb4630d9360c21df904599',
+    'da617a7857381c86ef963f85185a1afef851369a52cb4630d9360c21df904599',
+    [['skill', 'sarathi:sarathi', 'plugin/read + skills/list']]
+  ],
+  [
+    'cc-plugin-codex', '.agents/plugins/marketplace.json', 'plugins/cc-plugin-codex',
+    '.codex-plugin/plugin.json', '0.1.1',
+    '1da66cadeb01bb4b57f63e522fdc763df98d5ba6e2034e04599b02c1e394daed',
+    '1da66cadeb01bb4b57f63e522fdc763df98d5ba6e2034e04599b02c1e394daed',
+    [
+      ['hook', 'cc-plugin-codex@cc-plugin-codex:hooks/hooks.json:session_end:0:0', 'plugin/read + hooks/list'],
+      ['hook', 'cc-plugin-codex@cc-plugin-codex:hooks/hooks.json:stop:0:0', 'plugin/read + hooks/list'],
+      ['skill', 'cc-plugin-codex:claude-adversarial-review', 'plugin/read + skills/list'],
+      ['skill', 'cc-plugin-codex:claude-cancel', 'plugin/read + skills/list'],
+      ['skill', 'cc-plugin-codex:claude-cli-runtime', 'plugin/read + skills/list'],
+      ['skill', 'cc-plugin-codex:claude-prompting', 'plugin/read + skills/list'],
+      ['skill', 'cc-plugin-codex:claude-rescue', 'plugin/read + skills/list'],
+      ['skill', 'cc-plugin-codex:claude-result', 'plugin/read + skills/list'],
+      ['skill', 'cc-plugin-codex:claude-result-handling', 'plugin/read + skills/list'],
+      ['skill', 'cc-plugin-codex:claude-review', 'plugin/read + skills/list'],
+      ['skill', 'cc-plugin-codex:claude-setup', 'plugin/read + skills/list'],
+      ['skill', 'cc-plugin-codex:claude-status', 'plugin/read + skills/list'],
+      ['skill', 'cc-plugin-codex:claude-transfer', 'plugin/read + skills/list']
+    ]
+  ],
+  [
+    'speedy-skills', '.claude-plugin/marketplace.json', 'plugins/example-minimal',
+    '.claude-plugin/plugin.json', '0.1.0',
+    'd39797da9765bf1d822887dc6735f186d4bfc199279558817cf6eef375aab1c2',
+    'd39797da9765bf1d822887dc6735f186d4bfc199279558817cf6eef375aab1c2',
+    [['skill', 'example-minimal:summarizing-git-log', 'plugin/read + skills/list']]
+  ],
+  [
+    'roadrunner-admin', '.agents/plugins/marketplace.json', 'plugins/roadrunner-admin',
+    '.codex-plugin/plugin.json', '0.1.0',
+    '33eaa8e5aef5449d496771317d1f40205dabf06fa6d6041e1e142e61e651f5d1',
+    '33eaa8e5aef5449d496771317d1f40205dabf06fa6d6041e1e142e61e651f5d1',
+    [
+      ['mcp', 'roadrunner-admin', 'plugin/read'],
+      ['skill', 'roadrunner-admin:roadrunner-admin', 'plugin/read + skills/list']
+    ]
+  ]
+];
+
 async function temporaryDirectory(t, prefix) {
   const directory = await realpath(await mkdtemp(path.join(os.tmpdir(), prefix)));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -111,14 +239,10 @@ function publicReceipt(fixture, version, overrides = {}) {
       marketplace: fixture.marketplace,
       sourceRoot: '/workspace'
     },
-    capabilities: fixture.expectedKinds.map((kind, index) => ({
+    capabilities: fixture.expectedCapabilities.map(({ kind, key, source }) => ({
       kind,
-      key: `${fixture.plugin}:${kind}:${index}`,
-      source: kind === 'skill'
-        ? 'plugin/read + skills/list'
-        : kind === 'hook'
-          ? 'plugin/read + hooks/list'
-          : 'plugin/read',
+      key,
+      source,
       status: kind === 'skill'
         ? 'DISCOVERED_EFFECTIVE'
         : kind === 'hook'
@@ -127,6 +251,32 @@ function publicReceipt(fixture, version, overrides = {}) {
     })),
     isolation: { mode: 'strict', network: 'denied', hostState: 'denied' },
     ...overrides
+  };
+}
+
+async function preparedFixtureStub(fixture, temporaryRoot) {
+  const marketplaceRoot = path.join(temporaryRoot, fixture.evidenceId);
+  await mkdir(marketplaceRoot);
+  return {
+    archiveSha256: 'a'.repeat(64),
+    checkoutSha256: fixture.expectedCheckoutSha256,
+    marketplaceSha256: fixture.expectedMarketplaceSha256,
+    marketplaceRoot,
+    adapter: fixture.adapterId === 'none'
+      ? null
+      : {
+          id: 'local-source-v1',
+          originalSha256: 'd'.repeat(64),
+          adaptedSha256: 'e'.repeat(64)
+        },
+    pluginContract: {
+      marketplaceManifestPath: fixture.marketplaceManifestPath,
+      marketplace: fixture.marketplace,
+      plugin: fixture.plugin,
+      pluginRoot: fixture.pluginRoot,
+      pluginManifestPath: fixture.pluginManifestPath,
+      pluginVersion: fixture.pluginVersion
+    }
   };
 }
 
@@ -193,6 +343,19 @@ test('registry binds exactly the ten audited commits and only one static adapter
     }) => [evidenceId, marketplaceRoot, plugin, marketplace, licensePaths, expectedKinds]),
     FIXED_DETAILS
   );
+  assert.deepEqual(
+    PUBLIC_FIXTURES.map((fixture) => [
+      fixture.evidenceId,
+      fixture.marketplaceManifestPath,
+      fixture.pluginRoot,
+      fixture.pluginManifestPath,
+      fixture.pluginVersion,
+      fixture.expectedCheckoutSha256,
+      fixture.expectedMarketplaceSha256,
+      fixture.expectedCapabilities.map(({ kind, key, source }) => [kind, key, source])
+    ]),
+    FIXED_PLUGIN_CONTRACTS
+  );
   for (const fixture of PUBLIC_FIXTURES) {
     assert.equal(fixture.repositoryUrl, `https://github.com/${fixture.repository}`);
     assert.equal(
@@ -225,7 +388,31 @@ test('environment accepts only exact released versions and a checkout-relative o
     architecture: process.arch,
     outputBoundary: '/checkout',
     outputRoot: '/checkout/artifacts/public-fixtures',
-    platform: process.platform
+    platform: process.platform,
+    provenance: null
+  });
+
+  const github = {
+    ...env,
+    GITHUB_ACTIONS: 'true',
+    GITHUB_EVENT_NAME: 'push',
+    GITHUB_REF: 'refs/heads/main',
+    GITHUB_REPOSITORY: 'builtbyhuy/codex-plugin-check',
+    GITHUB_RUN_ATTEMPT: '2',
+    GITHUB_RUN_ID: '31379758041',
+    GITHUB_SERVER_URL: 'https://github.com',
+    GITHUB_SHA: 'a'.repeat(40)
+  };
+  assert.deepEqual(publicFixtureOptionsFromEnvironment(github, '/checkout').provenance, {
+    provider: 'github-actions',
+    repository: 'builtbyhuy/codex-plugin-check',
+    commit: 'a'.repeat(40),
+    ref: 'refs/heads/main',
+    event: 'push',
+    runId: '31379758041',
+    runAttempt: '2',
+    runUrl: 'https://github.com/builtbyhuy/codex-plugin-check/actions/runs/31379758041',
+    artifactName: 'public-fixture-evidence-31379758041-2'
   });
 
   for (const invalid of [
@@ -233,11 +420,15 @@ test('environment accepts only exact released versions and a checkout-relative o
     { ...env, CODEX_PRIOR_VERSION: '0.146.0' },
     { ...env, CODEX_PUBLIC_FIXTURE_OUTPUT_ROOT: '/tmp/evidence' },
     { ...env, CODEX_PUBLIC_FIXTURE_OUTPUT_ROOT: '../evidence' },
-    { ...env, CODEX_PUBLIC_FIXTURE_OUTPUT_ROOT: 'artifacts/../../evidence' }
+    { ...env, CODEX_PUBLIC_FIXTURE_OUTPUT_ROOT: 'artifacts/../../evidence' },
+    { ...github, GITHUB_REF: 'refs/heads/feature' },
+    { ...github, GITHUB_RUN_ID: 'not-a-run' },
+    { ...github, GITHUB_SHA: 'short' },
+    { ...github, GITHUB_ACTIONS: undefined }
   ]) {
     assert.throws(
       () => publicFixtureOptionsFromEnvironment(invalid, '/checkout'),
-      /0\.147\.0|0\.146\.1|relative evidence directory/i
+      /0\.147\.0|0\.146\.1|relative evidence directory|GitHub.*provenance/i
     );
   }
 });
@@ -343,6 +534,24 @@ test('receipt validator binds strict identity and audited capability semantics',
     /personal|privacy|host path/i
   );
 
+  const many = PUBLIC_FIXTURES.find(({ evidenceId }) => evidenceId === 'watercooler');
+  const complete = publicReceipt(many, '0.147.0');
+  for (const capabilities of [
+    complete.capabilities.filter((_, index) => index !== 2),
+    complete.capabilities.map((capability, index) => index === 0
+      ? { ...capability, key: 'wrong-key' }
+      : capability),
+    complete.capabilities.map((capability, index) => index === 0
+      ? { ...capability, source: 'wrong-source' }
+      : capability)
+  ]) {
+    assert.throws(() => validatePublicReceipt({ ...complete, capabilities }, {
+      fixture: many,
+      version: '0.147.0',
+      architecture: 'x64'
+    }), /capability|receipt|source|key|expected/i);
+  }
+
   const failed = {
     ...base,
     status: 'FAIL',
@@ -394,23 +603,7 @@ test('injected orchestration probes exactly ten by two cells and emits only sani
       await mkdir(scratchRoot);
       return scratchRoot;
     },
-    prepareFixture: async ({ fixture, temporaryRoot }) => {
-      const marketplaceRoot = path.join(temporaryRoot, fixture.evidenceId);
-      await mkdir(marketplaceRoot);
-      return {
-        archiveSha256: 'a'.repeat(64),
-        checkoutSha256: 'b'.repeat(64),
-        marketplaceSha256: 'c'.repeat(64),
-        marketplaceRoot,
-        adapter: fixture.adapterId === 'none'
-          ? null
-          : {
-              id: 'local-source-v1',
-              originalSha256: 'd'.repeat(64),
-              adaptedSha256: 'e'.repeat(64)
-            }
-      };
-    },
+    prepareFixture: ({ fixture, temporaryRoot }) => preparedFixtureStub(fixture, temporaryRoot),
     probeCell: async ({ fixture, version }) => {
       calls.push(`${fixture.repository}@${version}`);
       return { code: 0, receipt: publicReceipt(fixture, version) };
@@ -434,10 +627,11 @@ test('injected orchestration probes exactly ten by two cells and emits only sani
     observed: 10,
     required: 10,
     cells: 20,
-    compatibleCells: 20,
-    incompatibleCells: 0
+    passedCells: 20,
+    failedCells: 0
   });
   assert.equal(summary.outputRoot, '.');
+  assert.equal(summary.provenance, null);
   assert.equal(summary.fixtures.length, 10);
   assert.equal(summary.fixtures.flatMap(({ receipts }) => receipts).length, 20);
 
@@ -450,6 +644,45 @@ test('injected orchestration probes exactly ten by two cells and emits only sani
   assert.equal(serialized.includes(scratchParent), false);
   assert.equal(serialized.includes('/Users/alice'), false);
   assert.deepEqual(JSON.parse(serialized), summary);
+});
+
+test('orchestration rejects prepared tree or plugin identity drift before probing', async (t) => {
+  const mutations = [
+    ['checkout hash', (prepared) => { prepared.checkoutSha256 = 'f'.repeat(64); }],
+    ['marketplace hash', (prepared) => { prepared.marketplaceSha256 = 'f'.repeat(64); }],
+    ['plugin root', (prepared) => { prepared.pluginContract.pluginRoot = 'wrong-root'; }],
+    ['plugin version', (prepared) => { prepared.pluginContract.pluginVersion = '9.9.9'; }]
+  ];
+  for (const [label, mutate] of mutations) {
+    await t.test(label, async () => {
+      const boundary = await temporaryDirectory(t, `public-fixture-drift-${label.replace(' ', '-')}-`);
+      const scratchRoot = path.join(boundary, 'scratch');
+      let probeCalls = 0;
+      await assert.rejects(runPublicFixtureMatrix({
+        architecture: 'x64',
+        outputBoundary: boundary,
+        outputRoot: path.join(boundary, 'artifacts', 'public-fixtures'),
+        platform: 'linux'
+      }, {
+        assertRuntime: async () => {},
+        makeTemporaryRoot: async () => {
+          await mkdir(scratchRoot);
+          return scratchRoot;
+        },
+        prepareFixture: async ({ fixture, temporaryRoot }) => {
+          const prepared = await preparedFixtureStub(fixture, temporaryRoot);
+          mutate(prepared);
+          return prepared;
+        },
+        probeCell: async ({ fixture, version }) => {
+          probeCalls += 1;
+          return { code: 0, receipt: publicReceipt(fixture, version) };
+        },
+        removeTemporaryRoot: (root) => rm(root, { recursive: true, force: true })
+      }), /prepared|hash|plugin|contract|identity/i);
+      assert.equal(probeCalls, 0);
+    });
+  }
 });
 
 test('unexpected tool exits and cleanup failures fail closed without partial evidence', async (t) => {
@@ -470,23 +703,7 @@ test('unexpected tool exits and cleanup failures fail closed without partial evi
         await mkdir(scratchRoot);
         return scratchRoot;
       },
-      prepareFixture: async ({ fixture, temporaryRoot }) => {
-        const marketplaceRoot = path.join(temporaryRoot, fixture.evidenceId);
-        await mkdir(marketplaceRoot);
-        return {
-          archiveSha256: 'a'.repeat(64),
-          checkoutSha256: 'b'.repeat(64),
-          marketplaceSha256: 'c'.repeat(64),
-          marketplaceRoot,
-          adapter: fixture.adapterId === 'none'
-            ? null
-            : {
-                id: 'local-source-v1',
-                originalSha256: 'd'.repeat(64),
-                adaptedSha256: 'e'.repeat(64)
-              }
-        };
-      },
+      prepareFixture: ({ fixture, temporaryRoot }) => preparedFixtureStub(fixture, temporaryRoot),
       probeCell: async ({ fixture, version }) => {
         probeCalls += 1;
         return failure === 'tool'
@@ -503,7 +720,7 @@ test('unexpected tool exits and cleanup failures fail closed without partial evi
   }
 });
 
-test('a valid strict FAIL receipt is retained as version/API incompatibility and holds the summary', async (t) => {
+test('a valid strict FAIL is retained without inventing a cause and holds the summary', async (t) => {
   const boundary = await temporaryDirectory(t, 'public-fixture-incompatible-boundary-');
   const outputRoot = path.join(boundary, 'artifacts', 'public-fixtures');
   const scratchParent = await temporaryDirectory(t, 'public-fixture-incompatible-scratch-');
@@ -521,23 +738,7 @@ test('a valid strict FAIL receipt is retained as version/API incompatibility and
       await mkdir(scratchRoot);
       return scratchRoot;
     },
-    prepareFixture: async ({ fixture, temporaryRoot }) => {
-      const marketplaceRoot = path.join(temporaryRoot, fixture.evidenceId);
-      await mkdir(marketplaceRoot);
-      return {
-        archiveSha256: 'a'.repeat(64),
-        checkoutSha256: 'b'.repeat(64),
-        marketplaceSha256: 'c'.repeat(64),
-        marketplaceRoot,
-        adapter: fixture.adapterId === 'none'
-          ? null
-          : {
-              id: 'local-source-v1',
-              originalSha256: 'd'.repeat(64),
-              adaptedSha256: 'e'.repeat(64)
-            }
-      };
-    },
+    prepareFixture: ({ fixture, temporaryRoot }) => preparedFixtureStub(fixture, temporaryRoot),
     probeCell: async ({ fixture, version }) => {
       const receipt = publicReceipt(fixture, version);
       if (!first) return { code: 0, receipt };
@@ -557,10 +758,11 @@ test('a valid strict FAIL receipt is retained as version/API incompatibility and
   });
 
   assert.equal(summary.status, 'HOLD');
-  assert.equal(summary.gate.incompatibleCells, 1);
-  assert.equal(summary.gate.compatibleCells, 19);
-  assert.equal(summary.fixtures[0].receipts[0].outcome, 'VERSION_OR_API_INCOMPATIBLE');
+  assert.equal(summary.gate.failedCells, 1);
+  assert.equal(summary.gate.passedCells, 19);
+  assert.equal(summary.fixtures[0].receipts[0].outcome, 'FAIL');
   assert.equal(summary.fixtures[0].receipts[1].outcome, 'PASS');
+  assert.equal(JSON.stringify(summary).includes('VERSION_OR_API_INCOMPATIBLE'), false);
   assert.equal(
     JSON.parse(await readFile(
       path.join(outputRoot, summary.fixtures[0].receipts[0].receiptPath),
@@ -613,17 +815,7 @@ test('swapping the created evidence root for a symlink cannot write outside', as
       await mkdir(scratchRoot);
       return scratchRoot;
     },
-    prepareFixture: async ({ fixture, temporaryRoot }) => {
-      const marketplaceRoot = path.join(temporaryRoot, fixture.evidenceId);
-      await mkdir(marketplaceRoot);
-      return {
-        archiveSha256: 'a'.repeat(64),
-        checkoutSha256: 'b'.repeat(64),
-        marketplaceSha256: 'c'.repeat(64),
-        marketplaceRoot,
-        adapter: null
-      };
-    },
+    prepareFixture: ({ fixture, temporaryRoot }) => preparedFixtureStub(fixture, temporaryRoot),
     probeCell: async ({ fixture, version }) => {
       if (!swapped) {
         swapped = true;
@@ -787,12 +979,31 @@ test('on-disk symlink audit rejects a lexical escape from the checkout', async (
 
 test('real preparation verifies licenses, hashes source, and applies only the audited adapter', async (t) => {
   const direct = PUBLIC_FIXTURES[6];
+  const directMarketplace = `${JSON.stringify({
+    name: direct.marketplace,
+    plugins: [{
+      name: direct.plugin,
+      source: { source: 'local', path: './' }
+    }]
+  })}\n`;
+  const directPluginManifest = `${JSON.stringify({
+    name: direct.plugin,
+    version: direct.pluginVersion
+  })}\n`;
   const directArchive = tarArchive([
     { path: `${direct.archiveRoot}/`, type: '5' },
     { path: `${direct.archiveRoot}/LICENSE`, data: 'MIT\n' },
     { path: `${direct.archiveRoot}/.agents/`, type: '5' },
     { path: `${direct.archiveRoot}/.agents/plugins/`, type: '5' },
-    { path: `${direct.archiveRoot}/.agents/plugins/marketplace.json`, data: '{}\n' }
+    {
+      path: `${direct.archiveRoot}/.agents/plugins/marketplace.json`,
+      data: directMarketplace
+    },
+    { path: `${direct.archiveRoot}/.codex-plugin/`, type: '5' },
+    {
+      path: `${direct.archiveRoot}/.codex-plugin/plugin.json`,
+      data: directPluginManifest
+    }
   ]);
   const directTemporaryRoot = await temporaryDirectory(t, 'public-fixture-prepare-direct-');
   const directPrepared = await preparePublicFixture({
@@ -808,6 +1019,14 @@ test('real preparation verifies licenses, hashes source, and applies only the au
   assert.match(directPrepared.checkoutSha256, /^[a-f0-9]{64}$/);
   assert.match(directPrepared.marketplaceSha256, /^[a-f0-9]{64}$/);
   assert.equal(directPrepared.adapter, null);
+  assert.deepEqual(directPrepared.pluginContract, {
+    marketplaceManifestPath: direct.marketplaceManifestPath,
+    marketplace: direct.marketplace,
+    plugin: direct.plugin,
+    pluginRoot: direct.pluginRoot,
+    pluginManifestPath: direct.pluginManifestPath,
+    pluginVersion: direct.pluginVersion
+  });
   assert.equal(await readFile(path.join(directPrepared.marketplaceRoot, 'LICENSE'), 'utf8'), 'MIT\n');
 
   const adapted = PUBLIC_FIXTURES[1];
@@ -819,6 +1038,14 @@ test('real preparation verifies licenses, hashes source, and applies only the au
     {
       path: `${adapted.archiveRoot}/.agents/plugins/marketplace.json`,
       data: OH_MY_CASSETTE_MARKETPLACE
+    },
+    { path: `${adapted.archiveRoot}/.codex-plugin/`, type: '5' },
+    {
+      path: `${adapted.archiveRoot}/.codex-plugin/plugin.json`,
+      data: `${JSON.stringify({
+        name: adapted.plugin,
+        version: adapted.pluginVersion
+      })}\n`
     }
   ]);
   const adaptedTemporaryRoot = await temporaryDirectory(t, 'public-fixture-prepare-adapted-');
@@ -842,6 +1069,33 @@ test('real preparation verifies licenses, hashes source, and applies only the au
       'utf8'
     )).plugins[0].source,
     { source: 'local', path: './' }
+  );
+  assert.equal(adaptedPrepared.pluginContract.pluginVersion, adapted.pluginVersion);
+
+  const directManifestPath = path.join(
+    directPrepared.marketplaceRoot,
+    direct.marketplaceManifestPath
+  );
+  const directPluginManifestPath = path.join(
+    directPrepared.marketplaceRoot,
+    direct.pluginManifestPath
+  );
+  await writeFile(directManifestPath, `${JSON.stringify({
+    name: direct.marketplace,
+    plugins: [{ name: direct.plugin, source: './wrong-plugin-root' }]
+  })}\n`);
+  await assert.rejects(
+    validateStaticPluginContract(direct, directPrepared.marketplaceRoot),
+    /plugin.*root|source.*path|marketplace.*source/i
+  );
+  await writeFile(directManifestPath, directMarketplace);
+  await writeFile(directPluginManifestPath, `${JSON.stringify({
+    name: direct.plugin,
+    version: '9.9.9'
+  })}\n`);
+  await assert.rejects(
+    validateStaticPluginContract(direct, directPrepared.marketplaceRoot),
+    /plugin.*version|version.*plugin/i
   );
 
   const missingLicense = tarArchive([
@@ -911,6 +1165,8 @@ test('production cell probe invokes the real CLI contract with a fresh staged re
   assert.deepEqual(calls, [[
     '--marketplace-root', marketplaceRoot,
     '--plugin', 'bitrouter',
+    '--expected-plugin-root', '.',
+    '--expected-plugin-version', '0.1.0',
     '--codex-version', '0.147.0',
     '--cwd', marketplaceRoot,
     '--output', path.join(temporaryRoot, 'staged-receipts', 'bitrouter--codex-0.147.0.json'),
@@ -1012,6 +1268,34 @@ test('runtime preflight hard-fails outside Linux and requires a live Docker serv
   }
 });
 
+test('Docker inspection escalates a timeout from SIGTERM to SIGKILL', async () => {
+  const child = new EventEmitter();
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  const signals = [];
+  child.kill = (signal) => {
+    signals.push(signal);
+    if (signal === 'SIGKILL') {
+      queueMicrotask(() => child.emit('close', null, 'SIGKILL'));
+    }
+    return true;
+  };
+
+  await assert.rejects(inspectDockerReal({
+    killGraceMs: 5,
+    spawnProcess(command, args, options) {
+      assert.equal(command, 'docker');
+      assert.deepEqual(args, ['version', '--format', '{{.Server.Version}}']);
+      assert.equal(options.shell, false);
+      return child;
+    },
+    timeoutMs: 5
+  }), /timed out after 5ms/i);
+  assert.deepEqual(signals, ['SIGTERM', 'SIGKILL']);
+  child.stdout.destroy();
+  child.stderr.destroy();
+});
+
 test('atomic evidence creation never overwrites an existing receipt and leaves no temp file', async (t) => {
   const boundary = await temporaryDirectory(t, 'public-fixture-atomic-boundary-');
   const outputRoot = path.join(boundary, 'evidence');
@@ -1059,7 +1343,8 @@ test('entrypoint binds exact environment options and reports failures with exit 
     architecture: process.arch,
     outputBoundary: '/checkout',
     outputRoot: '/checkout/artifacts/public-fixtures',
-    platform: process.platform
+    platform: process.platform,
+    provenance: null
   });
 
   const holdCode = await publicFixtureMain({
@@ -1069,7 +1354,7 @@ test('entrypoint binds exact environment options and reports failures with exit 
   }, {
     runMatrix: async () => ({ status: 'HOLD' })
   });
-  assert.equal(holdCode, 1, 'a classified incompatibility must not make CI green');
+  assert.equal(holdCode, 1, 'a failed conformance cell must not make CI green');
 
   const toolErrorCode = await publicFixtureMain({
     cwd: '/checkout',

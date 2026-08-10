@@ -182,6 +182,34 @@ test('runs the exact Codex command and app-server discovery sequence', async () 
   ]);
 });
 
+test('binds the installed plugin source subtree and version when requested', async () => {
+  const expected = harness();
+  const receipt = await checkPlugin({
+    ...options,
+    expectedPluginRoot: pluginRoot,
+    expectedPluginVersion: '1.0.0'
+  }, expected.dependencies);
+  assert.equal(receipt.status, 'PASS');
+
+  for (const changed of [
+    { expectedPluginVersion: '9.9.9' },
+    { expectedPluginRoot: path.join(fixtureRoot, '.agents') }
+  ]) {
+    const observed = harness();
+    await assert.rejects(checkPlugin({
+      ...options,
+      expectedPluginRoot: pluginRoot,
+      expectedPluginVersion: '1.0.0',
+      ...changed
+    }, observed.dependencies), /expected|plugin.*(?:source|root|version)|(?:source|root|version).*plugin/i);
+    assert.deepEqual(
+      observed.lifecycle.filter(([name]) => ['assertCheckoutUnchanged', 'cleanup'].includes(name))
+        .map(([name]) => name),
+      ['assertCheckoutUnchanged', 'cleanup']
+    );
+  }
+});
+
 test('canonicalizes a symlink marketplace root across every Codex boundary', async () => {
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), 'codex-plugin-check-symlink-'));
   const linkedRoot = path.join(temporaryRoot, 'marketplace');

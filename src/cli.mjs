@@ -21,6 +21,8 @@ import { exitCodeForStatus } from './receipt.mjs';
 const VALUE_FLAGS = new Set([
   '--marketplace-root',
   '--plugin',
+  '--expected-plugin-root',
+  '--expected-plugin-version',
   '--codex',
   '--codex-version',
   '--cwd',
@@ -29,6 +31,7 @@ const VALUE_FLAGS = new Set([
 ]);
 const BOOLEAN_FLAGS = new Set(['--help', '--quiet']);
 const EXACT_VERSION = /^\d+\.\d+\.\d+$/;
+const EXACT_PLUGIN_VERSION = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 const RECEIPT_STATUSES = new Set([
   'PASS',
   'FAIL',
@@ -50,6 +53,8 @@ const STRICT_TIMEOUT_MS = 90_000;
 const HELP = `Usage: codex-plugin-check --marketplace-root <path> --plugin <name> --codex-version <version> [options]
 
 Options:
+  --expected-plugin-root <path>     Bind the local plugin source subtree
+  --expected-plugin-version <ver>  Bind the installed plugin version
   --codex <path>          Codex binary for env diagnostics (default: codex)
   --cwd <path>            Probe workspace (default: marketplace root)
   --output <path>         Receipt path (default: conformance.json)
@@ -85,6 +90,19 @@ function parseArguments(argv) {
   if (!parsed['codex-version']) throw new Error('Missing required --codex-version');
   if (!EXACT_VERSION.test(parsed['codex-version'])) {
     throw new Error('--codex-version must be an exact stable numeric version');
+  }
+  const hasExpectedPluginRoot = parsed['expected-plugin-root'] !== undefined;
+  const hasExpectedPluginVersion = parsed['expected-plugin-version'] !== undefined;
+  if (hasExpectedPluginRoot !== hasExpectedPluginVersion) {
+    throw new Error(
+      '--expected-plugin-root and --expected-plugin-version must be supplied together'
+    );
+  }
+  if (
+    hasExpectedPluginVersion &&
+    !EXACT_PLUGIN_VERSION.test(parsed['expected-plugin-version'])
+  ) {
+    throw new Error('--expected-plugin-version must be an exact plugin version');
   }
   parsed.codex ??= 'codex';
   parsed.output ??= 'conformance.json';
@@ -414,6 +432,8 @@ async function runEnv(options, io, dependencies) {
     codexVersion: options.codexVersion,
     cwd: options.cwd,
     output: options.output,
+    expectedPluginRoot: options.expectedPluginRoot,
+    expectedPluginVersion: options.expectedPluginVersion,
     isolation: 'env'
   });
   const code = validateReceipt(receipt, {
@@ -450,6 +470,9 @@ async function runStrict(options, io, dependencies) {
   const strictPlatform = `${dependencies.platform ?? process.platform}-${
     dependencies.architecture ?? process.arch
   }`;
+  const containerExpectedPluginRoot = options.expectedPluginRoot === undefined
+    ? undefined
+    : containerWorkspacePath(options.marketplaceRoot, options.expectedPluginRoot);
   const isolation = await createIsolation({
     targetRoot: options.marketplaceRoot,
     receiptPath: options.output,
@@ -465,6 +488,12 @@ async function runStrict(options, io, dependencies) {
       '/tool/src/cli.mjs',
       '--marketplace-root', '/workspace',
       '--plugin', options.plugin,
+      ...(containerExpectedPluginRoot === undefined
+        ? []
+        : [
+            '--expected-plugin-root', containerExpectedPluginRoot,
+            '--expected-plugin-version', options.expectedPluginVersion
+          ]),
       '--codex', '/usr/local/bin/codex',
       '--codex-version', options.codexVersion,
       '--cwd', containerCwd,
@@ -544,9 +573,23 @@ export async function main(argv, io = process, dependencies = {}) {
     const cwd = await resolveRealPath(
       path.resolve(baseDirectory, parsed.cwd ?? marketplaceRoot)
     );
+    const expectedPluginRoot = parsed['expected-plugin-root'] === undefined
+      ? undefined
+      : await resolveRealPath(path.resolve(
+          marketplaceRoot,
+          parsed['expected-plugin-root']
+        ));
+    if (
+      expectedPluginRoot !== undefined &&
+      !pathIsWithin(expectedPluginRoot, marketplaceRoot)
+    ) {
+      throw new Error('--expected-plugin-root must be inside the marketplace root');
+    }
     const options = {
       marketplaceRoot,
       plugin: parsed.plugin,
+      expectedPluginRoot,
+      expectedPluginVersion: parsed['expected-plugin-version'],
       codex: resolveBinary(parsed.codex, baseDirectory),
       codexVersion: parsed['codex-version'],
       cwd,

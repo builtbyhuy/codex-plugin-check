@@ -51,6 +51,6 @@ jobs:
           name: public-fixture-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/public-fixtures
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 90
           compression-level: 9
           include-hidden-files: false
