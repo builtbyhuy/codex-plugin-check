@@ -337,6 +337,39 @@ test('marks a declared skill missing when no skills/list entry exposes it', asyn
   });
 });
 
+test('disables a declared skill through released Codex before observing negative discovery', async () => {
+  const responses = successfulResponses();
+  responses.skills.data[1].skills[0].enabled = false;
+  responses.hooks.data[0].hooks[0].trustStatus = 'untrusted';
+  const observed = harness({ skills: responses.skills, hooks: responses.hooks });
+
+  const receipt = await checkPlugin({
+    ...options,
+    disabledSkills: ['sample:sample-skill']
+  }, observed.dependencies);
+
+  assert.deepEqual(observed.requests.slice(0, 4), [
+    ['plugin/read', { pluginName: 'sample', marketplacePath: manifestPath }],
+    ['skills/config/write', {
+      path: null,
+      name: 'sample:sample-skill',
+      enabled: false
+    }],
+    ['skills/list', { cwds: [fixtureRoot], forceReload: true }],
+    ['hooks/list', { cwds: [fixtureRoot] }]
+  ]);
+  assert.equal(receipt.status, 'FAIL');
+  assert.deepEqual(
+    receipt.capabilities.map(({ kind, status }) => ({ kind, status })),
+    [
+      { kind: 'app', status: 'DECLARED_ONLY' },
+      { kind: 'hook', status: 'DISCOVERED_UNTRUSTED' },
+      { kind: 'mcp', status: 'DECLARED_ONLY' },
+      { kind: 'skill', status: 'MISSING' }
+    ]
+  );
+});
+
 test('does not let an unrelated same-name skill satisfy plugin discovery', async () => {
   const responses = successfulResponses();
   responses.skills.data = [{

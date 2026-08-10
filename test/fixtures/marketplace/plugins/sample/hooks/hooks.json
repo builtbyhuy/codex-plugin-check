@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "nonexistent-sample-hook"
+            "command": "/usr/local/bin/node /tool/scripts/execution-sentinel.mjs hook"
           }
         ]
       }

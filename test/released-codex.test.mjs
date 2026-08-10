@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import net from 'node:net';
-import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -51,6 +51,18 @@ function releasedReceipt(version, overrides = {}) {
       }
     ],
     isolation: { mode: 'strict', network: 'denied', hostState: 'denied' },
+    ...overrides
+  };
+}
+
+function negativeReceipt(version, overrides = {}) {
+  const base = releasedReceipt(version);
+  return {
+    ...base,
+    status: 'FAIL',
+    capabilities: base.capabilities.map((capability) => capability.kind === 'skill'
+      ? { ...capability, status: 'MISSING' }
+      : capability),
     ...overrides
   };
 }
@@ -123,7 +135,7 @@ test('falsifier requires the exact current and prior released Codex versions bef
 test('injected orchestration audits the boundary and validates both receipts without changing checkout', async (t) => {
   const outputRoot = await temporaryDirectory(t, 'released-codex-output-');
   const fixtureRoot = await temporaryDirectory(t, 'released-codex-fixture-');
-  const observedVersions = [];
+  const observedLanes = [];
   const hashes = ['sha256-stable', 'sha256-stable'];
 
   const result = await runFalsifier({
@@ -141,15 +153,32 @@ test('injected orchestration audits the boundary and validates both receipts wit
       return boundaryReport();
     },
     probeVersion: async ({ outputPath, version }) => {
-      observedVersions.push(version);
+      observedLanes.push(`positive:${version}`);
       const receipt = releasedReceipt(version);
       await writeFile(outputPath, `${JSON.stringify(receipt, null, 2)}\n`);
       return { durationMs: version === '0.147.0' ? 12_345 : 23_456, receipt };
+    },
+    probeNegativeVersion: async ({ outputPath, version }) => {
+      observedLanes.push(`negative:${version}`);
+      const receipt = negativeReceipt(version);
+      await writeFile(outputPath, `${JSON.stringify(receipt, null, 2)}\n`);
+      return { durationMs: version === '0.147.0' ? 13_456 : 24_567, receipt };
     }
   });
 
-  assert.equal(result.status, 'PASS');
-  assert.deepEqual(observedVersions, ['0.147.0', '0.146.1']);
+  assert.equal(result.status, 'HOLD');
+  assert.equal(result.boundedFalsifier, 'PASS');
+  assert.deepEqual(result.gates.publicFixtureMatrix, {
+    status: 'UNRUN',
+    observed: 0,
+    required: 10
+  });
+  assert.deepEqual(observedLanes, [
+    'positive:0.147.0',
+    'negative:0.147.0',
+    'positive:0.146.1',
+    'negative:0.146.1'
+  ]);
   assert.deepEqual(
     result.versions.map(({ version, durationMs }) => ({ version, durationMs })),
     [
@@ -157,10 +186,159 @@ test('injected orchestration audits the boundary and validates both receipts wit
       { version: '0.146.1', durationMs: 23_456 }
     ]
   );
+  assert.deepEqual(
+    result.negativeVersions.map(({ version, durationMs }) => ({ version, durationMs })),
+    [
+      { version: '0.147.0', durationMs: 13_456 },
+      { version: '0.146.1', durationMs: 24_567 }
+    ]
+  );
   for (const version of [CURRENT_CODEX_VERSION, PRIOR_CODEX_VERSION]) {
-    const receiptPath = path.join(outputRoot, `codex-${version}.json`);
-    assert.equal(JSON.parse(await readFile(receiptPath, 'utf8')).codexVersion, version);
+    for (const lane of ['positive', 'negative']) {
+      const receiptPath = path.join(outputRoot, `codex-${version}-${lane}.json`);
+      assert.equal(JSON.parse(await readFile(receiptPath, 'utf8')).codexVersion, version);
+    }
   }
+});
+
+test('positive probe rejects hook or MCP execution sentinels before isolation cleanup', async (t) => {
+  const { probeReleasedVersion } = await import('../scripts/falsify-released-codex.mjs');
+  for (const sentinel of [
+    'codex-plugin-check-hook-executed',
+    'codex-plugin-check-mcp-executed'
+  ]) {
+    const root = await temporaryDirectory(t, 'released-codex-sentinel-');
+    const isolationOutput = path.join(root, 'isolation-output');
+    const finalOutput = path.join(root, 'receipt.json');
+    await mkdir(isolationOutput);
+    let cleaned = false;
+
+    await assert.rejects(probeReleasedVersion({
+      architecture: 'x64',
+      fixtureRoot: root,
+      outputPath: finalOutput,
+      version: '0.147.0'
+    }, {
+      createIsolation: async () => ({
+        outputDirectory: isolationOutput,
+        async cleanup() {
+          cleaned = true;
+          await rm(isolationOutput, { recursive: true, force: true });
+        }
+      }),
+      cliMain: async (_argv, io, cliDependencies) => {
+        const isolation = await cliDependencies.createIsolation({});
+        await writeFile(path.join(isolation.outputDirectory, sentinel), 'executed\n');
+        try {
+          await isolation.cleanup();
+          return 0;
+        } catch (cause) {
+          io.stderr.write(`Error: ${cause.message}\n`);
+          return 2;
+        }
+      },
+      now: () => 1
+    }), /execution sentinel/i, sentinel);
+    assert.equal(cleaned, true, `${sentinel} cleanup`);
+  }
+});
+
+test('synthetic hook and MCP commands write dedicated execution sentinels', async (t) => {
+  const plugin = JSON.parse(await readFile(new URL(
+    './fixtures/marketplace/plugins/sample/.codex-plugin/plugin.json',
+    import.meta.url
+  ), 'utf8'));
+  const hooks = JSON.parse(await readFile(new URL(
+    './fixtures/marketplace/plugins/sample/hooks/hooks.json',
+    import.meta.url
+  ), 'utf8'));
+  assert.equal(plugin.mcpServers['sample-mcp'].command, '/usr/local/bin/node');
+  assert.deepEqual(plugin.mcpServers['sample-mcp'].args, [
+    '/tool/scripts/execution-sentinel.mjs',
+    'mcp'
+  ]);
+  assert.equal(
+    hooks.hooks.SessionStart[0].hooks[0].command,
+    '/usr/local/bin/node /tool/scripts/execution-sentinel.mjs hook'
+  );
+
+  const { writeExecutionSentinel } = await import('../scripts/execution-sentinel.mjs');
+  const outputRoot = await temporaryDirectory(t, 'released-codex-execution-sentinel-');
+  await writeExecutionSentinel('hook', outputRoot);
+  await writeExecutionSentinel('mcp', outputRoot);
+  assert.equal(
+    await readFile(path.join(outputRoot, 'codex-plugin-check-hook-executed'), 'utf8'),
+    'hook executed\n'
+  );
+  assert.equal(
+    await readFile(path.join(outputRoot, 'codex-plugin-check-mcp-executed'), 'utf8'),
+    'mcp executed\n'
+  );
+});
+
+test('positive probe timing excludes image preparation and includes cleanup plus final validation', async (t) => {
+  const { probeReleasedVersion } = await import('../scripts/falsify-released-codex.mjs');
+  const root = await temporaryDirectory(t, 'released-codex-timing-');
+  const isolationOutput = path.join(root, 'isolation-output');
+  const finalOutput = path.join(root, 'receipt.json');
+  await mkdir(isolationOutput);
+  let clock = 0;
+
+  const run = await probeReleasedVersion({
+    architecture: 'x64',
+    fixtureRoot: root,
+    outputPath: finalOutput,
+    version: '0.147.0'
+  }, {
+    createIsolation: async () => {
+      clock += 200_000;
+      return {
+        outputDirectory: isolationOutput,
+        async cleanup() {
+          clock += 1_000;
+        }
+      };
+    },
+    cliMain: async (_argv, _io, cliDependencies) => {
+      const isolation = await cliDependencies.createIsolation({});
+      clock += 88_000;
+      await isolation.cleanup();
+      await writeFile(finalOutput, `${JSON.stringify(releasedReceipt('0.147.0'))}\n`);
+      return 0;
+    },
+    now: () => clock
+  });
+
+  assert.equal(run.durationMs, 89_000, '200 seconds of image preparation must be excluded');
+});
+
+test('positive probe rejects when post-preparation cleanup pushes runtime to 90 seconds', async (t) => {
+  const { probeReleasedVersion } = await import('../scripts/falsify-released-codex.mjs');
+  const root = await temporaryDirectory(t, 'released-codex-timing-limit-');
+  const isolationOutput = path.join(root, 'isolation-output');
+  const finalOutput = path.join(root, 'receipt.json');
+  await mkdir(isolationOutput);
+  let clock = 0;
+
+  await assert.rejects(probeReleasedVersion({
+    architecture: 'x64',
+    fixtureRoot: root,
+    outputPath: finalOutput,
+    version: '0.147.0'
+  }, {
+    createIsolation: async () => ({
+      outputDirectory: isolationOutput,
+      async cleanup() { clock += 1_000; }
+    }),
+    cliMain: async (_argv, _io, cliDependencies) => {
+      const isolation = await cliDependencies.createIsolation({});
+      clock += 89_000;
+      await isolation.cleanup();
+      await writeFile(finalOutput, `${JSON.stringify(releasedReceipt('0.147.0'))}\n`);
+      return 0;
+    },
+    now: () => clock
+  }), /90000ms limit/i);
 });
 
 test('released receipt hard gates reject false discovery, identity, isolation, privacy, and timing evidence', () => {
@@ -357,8 +535,33 @@ test('falsifier fails when the fixture hash changes across otherwise passing pro
       const receipt = releasedReceipt(version);
       await writeFile(outputPath, `${JSON.stringify(receipt)}\n`);
       return { durationMs: 1, receipt };
+    },
+    probeNegativeVersion: async ({ outputPath, version }) => {
+      const receipt = negativeReceipt(version);
+      await writeFile(outputPath, `${JSON.stringify(receipt)}\n`);
+      return { durationMs: 1, receipt };
     }
   }), /checkout.*changed/i);
+});
+
+test('falsifier removes its default owned output root on failure', async (t) => {
+  const ownedOutputRoot = await temporaryDirectory(t, 'released-codex-owned-failure-');
+  const fixtureRoot = await temporaryDirectory(t, 'released-codex-fixture-');
+
+  await assert.rejects(runFalsifier({
+    env: EXACT_ENV,
+    platform: 'linux',
+    architecture: 'x64',
+    fixtureRoot,
+    personalMarkers: []
+  }, {
+    assertStrictDocker: async () => {},
+    makeOutputRoot: async () => ownedOutputRoot,
+    hashCheckout: async () => 'stable',
+    auditBoundary: async () => { throw new Error('bounded failure'); }
+  }), /bounded failure/i);
+
+  await assert.rejects(access(ownedOutputRoot), { code: 'ENOENT' });
 });
 
 const strictDocker = await dockerServerAvailable();
@@ -368,8 +571,14 @@ test('released Codex current and prior binaries pass the real strict Linux falsi
 }, async () => {
   const result = await runFalsifier({ env: EXACT_ENV });
 
-  assert.equal(result.status, 'PASS');
+  assert.equal(result.status, 'HOLD');
+  assert.equal(result.boundedFalsifier, 'PASS');
+  assert.equal(result.gates.publicFixtureMatrix.status, 'UNRUN');
   assert.deepEqual(result.versions.map(({ version }) => version), ['0.147.0', '0.146.1']);
+  assert.deepEqual(
+    result.negativeVersions.map(({ version }) => version),
+    ['0.147.0', '0.146.1']
+  );
   for (const run of result.versions) {
     assert.ok(run.durationMs < 90_000, `${run.version} exceeded the 90 second probe limit`);
     validateReleasedReceipt(run.receipt, {
@@ -378,5 +587,17 @@ test('released Codex current and prior binaries pass the real strict Linux falsi
       personalMarkers: [],
       version: run.version
     });
+  }
+  for (const run of result.negativeVersions) {
+    assert.ok(run.durationMs < 90_000, `${run.version} negative lane exceeded 90 seconds`);
+    assert.equal(run.receipt.status, 'FAIL');
+    assert.equal(
+      run.receipt.capabilities.find(({ kind }) => kind === 'skill')?.status,
+      'MISSING'
+    );
+    assert.equal(
+      run.receipt.capabilities.find(({ kind }) => kind === 'hook')?.status,
+      'DISCOVERED_UNTRUSTED'
+    );
   }
 });

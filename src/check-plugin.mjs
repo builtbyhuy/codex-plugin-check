@@ -136,12 +136,20 @@ export async function checkPlugin(options, dependencies = {}) {
       marketplacePath
     });
     validatePluginReadIdentity(pluginResult?.plugin, install, installed, marketplacePath);
+    const declaredSkills = Array.isArray(pluginResult?.plugin?.skills) ? pluginResult.plugin.skills : [];
+    const disabledSkills = options.disabledSkills ?? [];
+    if (!Array.isArray(disabledSkills) || disabledSkills.some((name) =>
+      typeof name !== 'string' || !declaredSkills.some((skill) => skill?.name === name))) {
+      throw new Error('Disabled skill must name a declared plugin skill');
+    }
+    for (const name of new Set(disabledSkills)) {
+      await client.request('skills/config/write', { path: null, name, enabled: false });
+    }
     const skillsResult = await client.request('skills/list', {
       cwds: [marketplaceRoot],
       forceReload: true
     });
     const hooksResult = await client.request('hooks/list', { cwds: [marketplaceRoot] });
-    const declaredSkills = Array.isArray(pluginResult?.plugin?.skills) ? pluginResult.plugin.skills : [];
     const effectiveSkills = Array.isArray(skillsResult?.data)
       ? skillsResult.data
         .flatMap((entry) => Array.isArray(entry?.skills) ? entry.skills : [])

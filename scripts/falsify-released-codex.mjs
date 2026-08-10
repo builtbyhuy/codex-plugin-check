@@ -3,6 +3,7 @@
 import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import {
+  access,
   mkdtemp,
   mkdir,
   readFile,
@@ -20,6 +21,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { main as cliMainReal, validateReceipt } from '../src/cli.mjs';
 import { createIsolation as createIsolationReal } from '../src/isolation.mjs';
+import { EXECUTION_SENTINELS } from './execution-sentinel.mjs';
 
 export const CURRENT_CODEX_VERSION = '0.147.0';
 export const PRIOR_CODEX_VERSION = '0.146.1';
@@ -244,9 +246,7 @@ export function validateReleasedReceipt(receipt, options) {
   if (mcp?.source !== 'plugin/read' || mcp.status !== 'DECLARED_ONLY') {
     throw new Error(`Released Codex ${options.version} made an invalid MCP runtime claim`);
   }
-  if (!Number.isFinite(options.durationMs) || options.durationMs < 0 || options.durationMs >= PROBE_LIMIT_MS) {
-    throw new Error(`Released Codex ${options.version} probe reached the ${PROBE_LIMIT_MS}ms limit`);
-  }
+  validateProbeDuration(options.durationMs, options.version);
   const values = stringValues(receipt).map((value) => value.toLocaleLowerCase('en'));
   for (const marker of options.personalMarkers ?? []) {
     const normalized = marker.toLocaleLowerCase('en');
@@ -255,6 +255,100 @@ export function validateReleasedReceipt(receipt, options) {
     }
   }
   return receipt;
+}
+
+export function validateNegativeReceipt(receipt, options) {
+  const platform = options.platform ?? `linux-${options.architecture}`;
+  const sourceRoot = options.sourceRoot ?? '/workspace';
+  const isolation = options.isolation ?? {
+    mode: 'strict',
+    network: 'denied',
+    hostState: 'denied'
+  };
+  const receiptCode = validateReceipt(receipt, {
+    codexVersion: options.version,
+    plugin: 'sample',
+    sourceRoot,
+    platform,
+    isolation
+  });
+  if (receiptCode !== 1 || receipt.status !== 'FAIL') {
+    throw new Error(`Released Codex ${options.version} negative lane did not produce FAIL`);
+  }
+  if (receipt.plugin.marketplace !== 'local-marketplace') {
+    throw new Error(`Released Codex ${options.version} negative lane returned the wrong marketplace`);
+  }
+  const capabilities = new Map(receipt.capabilities.map((capability) => [
+    `${capability.kind}\0${capability.key}`,
+    capability
+  ]));
+  if (receipt.capabilities.length !== 3 || capabilities.size !== 3) {
+    throw new Error(`Released Codex ${options.version} negative lane returned extra capabilities`);
+  }
+  const skill = capabilities.get('skill\0sample:sample-skill');
+  if (skill?.source !== 'plugin/read + skills/list' || skill.status !== 'MISSING') {
+    throw new Error(`Released Codex ${options.version} did not observe the disabled skill as missing`);
+  }
+  const hook = capabilities.get(
+    'hook\0sample@local-marketplace:hooks/hooks.json:session_start:0:0'
+  );
+  if (hook?.source !== 'plugin/read + hooks/list' || hook.status !== 'DISCOVERED_UNTRUSTED') {
+    throw new Error(`Released Codex ${options.version} did not preserve the untrusted hook state`);
+  }
+  const mcp = capabilities.get('mcp\0sample-mcp');
+  if (mcp?.source !== 'plugin/read' || mcp.status !== 'DECLARED_ONLY') {
+    throw new Error(`Released Codex ${options.version} negative lane made an MCP runtime claim`);
+  }
+  validateProbeDuration(options.durationMs, options.version);
+  const values = stringValues(receipt).map((value) => value.toLocaleLowerCase('en'));
+  for (const marker of options.personalMarkers ?? []) {
+    const normalized = marker.toLocaleLowerCase('en');
+    if (normalized !== '' && values.some((value) => value.includes(normalized))) {
+      throw new Error(`Released Codex ${options.version} negative receipt leaked a host marker`);
+    }
+  }
+  return receipt;
+}
+
+function validateProbeDuration(durationMs, version) {
+  if (!Number.isFinite(durationMs) || durationMs < 0 || durationMs >= PROBE_LIMIT_MS) {
+    throw new Error(`Released Codex ${version} probe reached the ${PROBE_LIMIT_MS}ms limit`);
+  }
+}
+
+async function assertExecutionSentinelsAbsent(outputDirectory, inspect = access) {
+  for (const filename of Object.values(EXECUTION_SENTINELS)) {
+    try {
+      await inspect(path.join(outputDirectory, filename));
+    } catch (cause) {
+      if (cause?.code === 'ENOENT') continue;
+      throw cause;
+    }
+    throw new Error(`Plugin execution sentinel observed: ${filename}`);
+  }
+}
+
+function guardIsolationCleanup(isolation, dependencies = {}) {
+  return {
+    ...isolation,
+    async cleanup() {
+      let primaryError;
+      try {
+        await assertExecutionSentinelsAbsent(
+          isolation.outputDirectory,
+          dependencies.access ?? access
+        );
+      } catch (cause) {
+        primaryError = cause;
+      }
+      try {
+        await isolation.cleanup();
+      } catch (cause) {
+        primaryError ??= cause;
+      }
+      if (primaryError) throw primaryError;
+    }
+  };
 }
 
 function startHostLoopbackServer() {
@@ -375,16 +469,19 @@ export async function auditStrictBoundary({ fixtureRoot, version }, dependencies
   return report;
 }
 
-async function probeVersionReal({ architecture, fixtureRoot, outputPath, version }, dependencies = {}) {
+export async function probeReleasedVersion(
+  { architecture, fixtureRoot, outputPath, version },
+  dependencies = {}
+) {
   const cliMain = dependencies.cliMain ?? cliMainReal;
-  const execute = dependencies.runProcess ?? runProcess;
-  let durationMs;
+  const createIsolation = dependencies.createIsolation ?? createIsolationReal;
+  const now = dependencies.now ?? (() => performance.now());
+  let startedAt;
   let stderr = '';
-  const timedContainerProcess = async (command, args, options) => {
-    const started = performance.now();
-    const result = await execute(command, args, options);
-    durationMs = performance.now() - started;
-    return result;
+  const preparedIsolation = async (options) => {
+    const isolation = await createIsolation(options);
+    startedAt = now();
+    return guardIsolationCleanup(isolation, dependencies);
   };
   const code = await cliMain([
     '--marketplace-root', fixtureRoot,
@@ -398,21 +495,109 @@ async function probeVersionReal({ architecture, fixtureRoot, outputPath, version
     stdout: { write: () => {} },
     stderr: { write: (value) => { stderr += String(value); } }
   }, {
-    runProcess: timedContainerProcess
+    createIsolation: preparedIsolation,
+    runProcess: dependencies.runProcess
   });
   if (code !== 0) {
     throw new Error(`Released Codex ${version} strict probe failed with code ${code}: ${stderr.trim()}`);
   }
-  if (durationMs === undefined) {
+  if (startedAt === undefined) {
     throw new Error(`Released Codex ${version} did not enter the strict container probe`);
   }
   const receipt = JSON.parse(await readFile(outputPath, 'utf8'));
   validateReleasedReceipt(receipt, {
     architecture,
-    durationMs,
+    durationMs: 0,
     personalMarkers: realPersonalMarkers(),
     version
   });
+  const durationMs = now() - startedAt;
+  validateProbeDuration(durationMs, version);
+  return { durationMs, receipt };
+}
+
+export async function probeNegativeReleasedVersion(
+  { architecture, fixtureRoot, outputPath, version },
+  dependencies = {}
+) {
+  const createIsolation = dependencies.createIsolation ?? createIsolationReal;
+  const execute = dependencies.runProcess ?? runProcess;
+  const now = dependencies.now ?? (() => performance.now());
+  const rawIsolation = await createIsolation({
+    targetRoot: fixtureRoot,
+    receiptPath: outputPath,
+    mode: 'strict',
+    platform: process.platform,
+    codexVersion: version
+  });
+  const startedAt = now();
+  const isolation = guardIsolationCleanup(rawIsolation, dependencies);
+  let childCode;
+  let stagedReceipt;
+  let primaryError;
+  try {
+    const invocation = isolation.wrap('/usr/local/bin/node', [
+      '/tool/scripts/negative-probe.mjs',
+      '--marketplace-root', '/workspace',
+      '--plugin', 'sample',
+      '--codex', '/usr/local/bin/codex',
+      '--codex-version', version,
+      '--cwd', '/workspace',
+      '--output', isolation.containerReceiptPath,
+      '--disable-skill', 'sample:sample-skill'
+    ]);
+    const child = await execute(invocation.command, invocation.args, {
+      cwd: fixtureRoot,
+      env: isolation.env,
+      timeoutMs: PROBE_LIMIT_MS
+    });
+    childCode = child.code;
+    stagedReceipt = JSON.parse(await readFile(isolation.outputPath, 'utf8'));
+    validateNegativeReceipt(stagedReceipt, {
+      durationMs: 0,
+      isolation: { mode: 'env', network: 'not_enforced', hostState: 'not_enforced' },
+      personalMarkers: realPersonalMarkers(),
+      platform: `linux-${architecture}`,
+      sourceRoot: '/workspace',
+      version
+    });
+    if (childCode !== 1) {
+      throw new Error(
+        `Released Codex ${version} negative receipt and child exit disagree (${childCode})`
+      );
+    }
+  } catch (cause) {
+    primaryError = cause;
+  }
+  for (const finalize of [
+    () => isolation.assertCheckoutUnchanged(),
+    () => isolation.cleanup()
+  ]) {
+    try {
+      await finalize();
+    } catch (cause) {
+      primaryError ??= cause;
+    }
+  }
+  if (primaryError) throw primaryError;
+
+  const certifiedReceipt = {
+    ...stagedReceipt,
+    isolation: { mode: 'strict', network: 'denied', hostState: 'denied' }
+  };
+  await writeFile(outputPath, `${JSON.stringify(certifiedReceipt, null, 2)}\n`, {
+    flag: 'wx',
+    mode: 0o600
+  });
+  const receipt = JSON.parse(await readFile(outputPath, 'utf8'));
+  validateNegativeReceipt(receipt, {
+    architecture,
+    durationMs: 0,
+    personalMarkers: realPersonalMarkers(),
+    version
+  });
+  const durationMs = now() - startedAt;
+  validateProbeDuration(durationMs, version);
   return { durationMs, receipt };
 }
 
@@ -425,58 +610,113 @@ export async function runFalsifier(options = {}, dependencies = {}) {
   await assertStrictDocker({ platform });
 
   const fixtureRoot = await realpath(path.resolve(options.fixtureRoot ?? FIXTURE_ROOT));
-  const outputRoot = options.outputRoot
-    ? await realpath(path.resolve(options.outputRoot))
-    : await realpath(await mkdtemp(path.join(await realpath(os.tmpdir()), 'codex-plugin-falsifier-')));
+  const ownsOutputRoot = options.outputRoot === undefined;
+  const makeOutputRoot = dependencies.makeOutputRoot ?? (async () =>
+    mkdtemp(path.join(await realpath(os.tmpdir()), 'codex-plugin-falsifier-')));
+  const outputRoot = await realpath(options.outputRoot
+    ? path.resolve(options.outputRoot)
+    : await makeOutputRoot());
   await mkdir(outputRoot, { recursive: true });
-  const hashCheckout = dependencies.hashCheckout ?? hashCheckoutReal;
-  const auditBoundary = dependencies.auditBoundary ?? auditStrictBoundary;
-  const probeVersion = dependencies.probeVersion ?? probeVersionReal;
-  const beforeHash = await hashCheckout(fixtureRoot);
-  const boundary = validateBoundaryReport(await auditBoundary({
-    fixtureRoot,
-    outputRoot,
-    version: versions[0]
-  }));
-  const runs = [];
-  for (const version of versions) {
-    const outputPath = path.join(outputRoot, `codex-${version}.json`);
-    const run = await probeVersion({ architecture, fixtureRoot, outputPath, version });
-    validateReleasedReceipt(run.receipt, {
-      architecture,
-      durationMs: run.durationMs,
-      personalMarkers: options.personalMarkers ?? realPersonalMarkers(),
-      version
-    });
-    runs.push({
-      version,
-      durationMs: run.durationMs,
-      receiptPath: outputPath,
-      receipt: run.receipt
-    });
+  try {
+    const hashCheckout = dependencies.hashCheckout ?? hashCheckoutReal;
+    const auditBoundary = dependencies.auditBoundary ?? auditStrictBoundary;
+    const probeVersion = dependencies.probeVersion ?? probeReleasedVersion;
+    const probeNegativeVersion = dependencies.probeNegativeVersion ?? probeNegativeReleasedVersion;
+    const beforeHash = await hashCheckout(fixtureRoot);
+    const boundary = validateBoundaryReport(await auditBoundary({
+      fixtureRoot,
+      outputRoot,
+      version: versions[0]
+    }));
+    const runs = [];
+    const negativeRuns = [];
+    for (const version of versions) {
+      const outputPath = path.join(outputRoot, `codex-${version}-positive.json`);
+      const run = await probeVersion({ architecture, fixtureRoot, outputPath, version });
+      validateReleasedReceipt(run.receipt, {
+        architecture,
+        durationMs: run.durationMs,
+        personalMarkers: options.personalMarkers ?? realPersonalMarkers(),
+        version
+      });
+      runs.push({
+        version,
+        durationMs: run.durationMs,
+        receiptPath: outputPath,
+        receipt: run.receipt
+      });
+
+      const negativeOutputPath = path.join(outputRoot, `codex-${version}-negative.json`);
+      const negativeRun = await probeNegativeVersion({
+        architecture,
+        fixtureRoot,
+        outputPath: negativeOutputPath,
+        version
+      });
+      validateNegativeReceipt(negativeRun.receipt, {
+        architecture,
+        durationMs: negativeRun.durationMs,
+        personalMarkers: options.personalMarkers ?? realPersonalMarkers(),
+        version
+      });
+      negativeRuns.push({
+        version,
+        durationMs: negativeRun.durationMs,
+        receiptPath: negativeOutputPath,
+        receipt: negativeRun.receipt
+      });
+    }
+    const afterHash = await hashCheckout(fixtureRoot);
+    if (afterHash !== beforeHash) {
+      throw new Error(
+        `Fixture checkout changed during released-Codex falsification (${beforeHash} -> ${afterHash})`
+      );
+    }
+    const summary = {
+      schemaVersion: '0.1.0',
+      status: 'HOLD',
+      boundedFalsifier: 'PASS',
+      outputRoot,
+      checkoutHash: beforeHash,
+      boundary,
+      gates: {
+        releasedBinaryMatrix: { status: 'PASS', versions, lanes: ['positive', 'negative'] },
+        strictBoundary: { status: 'PASS' },
+        executionSentinels: { status: 'PASS' },
+        negativeDiscovery: { status: 'PASS' },
+        publicFixtureMatrix: { status: 'UNRUN', observed: 0, required: 10 },
+        publication: { status: 'HOLD' }
+      },
+      versions: runs.map(({ version, durationMs, receiptPath }) => ({
+        version,
+        durationMs,
+        receiptPath
+      })),
+      negativeVersions: negativeRuns.map(({ version, durationMs, receiptPath }) => ({
+        version,
+        durationMs,
+        receiptPath
+      }))
+    };
+    await writeFile(
+      path.join(outputRoot, 'falsifier-summary.json'),
+      `${JSON.stringify(summary, null, 2)}\n`,
+      { flag: 'wx', mode: 0o600 }
+    );
+    return { ...summary, versions: runs, negativeVersions: negativeRuns };
+  } catch (cause) {
+    if (ownsOutputRoot) {
+      try {
+        await rm(outputRoot, { recursive: true, force: true });
+      } catch (cleanupCause) {
+        throw new Error(
+          `Falsifier failed and retained output at ${outputRoot}: ${cleanupCause.message}`,
+          { cause }
+        );
+      }
+    }
+    throw cause;
   }
-  const afterHash = await hashCheckout(fixtureRoot);
-  if (afterHash !== beforeHash) {
-    throw new Error(`Fixture checkout changed during released-Codex falsification (${beforeHash} -> ${afterHash})`);
-  }
-  const summary = {
-    schemaVersion: '0.1.0',
-    status: 'PASS',
-    outputRoot,
-    checkoutHash: beforeHash,
-    boundary,
-    versions: runs.map(({ version, durationMs, receiptPath }) => ({
-      version,
-      durationMs,
-      receiptPath
-    }))
-  };
-  await writeFile(
-    path.join(outputRoot, 'falsifier-summary.json'),
-    `${JSON.stringify(summary, null, 2)}\n`,
-    { flag: 'wx', mode: 0o600 }
-  );
-  return { ...summary, versions: runs };
 }
 
 function isEntrypoint() {
@@ -489,9 +729,16 @@ if (isEntrypoint()) {
     const result = await runFalsifier();
     process.stdout.write(`${JSON.stringify({
       status: result.status,
+      boundedFalsifier: result.boundedFalsifier,
       outputRoot: result.outputRoot,
       checkoutHash: result.checkoutHash,
+      gates: result.gates,
       versions: result.versions.map(({ version, durationMs, receiptPath }) => ({
+        version,
+        durationMs,
+        receiptPath
+      })),
+      negativeVersions: result.negativeVersions.map(({ version, durationMs, receiptPath }) => ({
         version,
         durationMs,
         receiptPath
