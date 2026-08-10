@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import {
   access,
+  lstat,
   mkdtemp,
   mkdir,
   readFile,
@@ -58,7 +59,88 @@ export function falsifierOptionsFromEnvironment(env = process.env, cwd = process
   ) {
     throw new Error('CODEX_FALSIFIER_OUTPUT_ROOT must name a relative evidence directory');
   }
-  return { env, outputRoot };
+  return { env, outputBoundary: baseDirectory, outputRoot };
+}
+
+function pathIsWithin(candidate, root) {
+  const relative = path.relative(root, candidate);
+  return relative === '' || (
+    relative !== '..' &&
+    !relative.startsWith(`..${path.sep}`) &&
+    !path.isAbsolute(relative)
+  );
+}
+
+function safeBoundaryRelative(outputRoot, boundary) {
+  const relative = path.relative(boundary, outputRoot);
+  if (
+    relative === '' ||
+    relative === '..' ||
+    relative.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relative)
+  ) {
+    throw new Error('Evidence directory must be a child of its checkout boundary');
+  }
+  return relative;
+}
+
+async function inspectEvidenceDirectoryPath(boundary, relative, createMissing) {
+  let current = boundary;
+  for (const component of relative.split(path.sep)) {
+    current = path.join(current, component);
+    let metadata;
+    try {
+      metadata = await lstat(current);
+    } catch (cause) {
+      if (cause?.code !== 'ENOENT' || !createMissing) throw cause;
+      try {
+        await mkdir(current, { mode: 0o700 });
+      } catch (mkdirCause) {
+        if (mkdirCause?.code !== 'EEXIST') throw mkdirCause;
+      }
+      metadata = await lstat(current);
+    }
+    if (metadata.isSymbolicLink()) {
+      throw new Error(`Evidence directory parent must not be a symlink: ${current}`);
+    }
+    if (!metadata.isDirectory()) {
+      throw new Error(`Evidence directory parent must be a directory: ${current}`);
+    }
+  }
+}
+
+async function prepareEvidenceOutputRoot(requestedOutputRoot, requestedBoundary) {
+  if (requestedBoundary === undefined) {
+    // Programmatic callers may intentionally manage evidence outside a checkout.
+    // Only environment-derived options bind output to a checkout boundary.
+    await mkdir(requestedOutputRoot, { recursive: true, mode: 0o700 });
+    return { binding: null, outputRoot: await realpath(requestedOutputRoot) };
+  }
+
+  const boundaryRequest = path.resolve(requestedBoundary);
+  const outputRequest = path.resolve(requestedOutputRoot);
+  const relative = safeBoundaryRelative(outputRequest, boundaryRequest);
+  const boundary = await realpath(boundaryRequest);
+  const boundaryMetadata = await lstat(boundary);
+  if (!boundaryMetadata.isDirectory()) {
+    throw new Error('Evidence checkout boundary must be a directory');
+  }
+  await inspectEvidenceDirectoryPath(boundary, relative, true);
+  const outputRoot = await realpath(path.join(boundary, relative));
+  if (!pathIsWithin(outputRoot, boundary)) {
+    throw new Error('Evidence directory escaped its canonical checkout boundary');
+  }
+  await inspectEvidenceDirectoryPath(boundary, relative, false);
+  return { binding: { boundary, relative }, outputRoot };
+}
+
+async function assertEvidenceOutputRoot(outputRoot, binding) {
+  if (binding === null) return;
+  await inspectEvidenceDirectoryPath(binding.boundary, binding.relative, false);
+  const observed = await realpath(path.join(binding.boundary, binding.relative));
+  if (observed !== outputRoot || !pathIsWithin(observed, binding.boundary)) {
+    throw new Error('Evidence directory escaped its canonical checkout boundary');
+  }
 }
 
 function appendOutput(chunks, chunk, state) {
@@ -635,14 +717,22 @@ export async function runFalsifier(options = {}, dependencies = {}) {
   const requestedOutputRoot = options.outputRoot
     ? path.resolve(options.outputRoot)
     : await makeOutputRoot();
-  await mkdir(requestedOutputRoot, { recursive: true, mode: 0o700 });
-  const outputRoot = await realpath(requestedOutputRoot);
+  const preparedOutput = await prepareEvidenceOutputRoot(
+    requestedOutputRoot,
+    options.outputBoundary
+  );
+  const outputRoot = preparedOutput.outputRoot;
+  const recheckOutputRoot = () => assertEvidenceOutputRoot(
+    outputRoot,
+    preparedOutput.binding
+  );
   try {
     const hashCheckout = dependencies.hashCheckout ?? hashCheckoutReal;
     const auditBoundary = dependencies.auditBoundary ?? auditStrictBoundary;
     const probeVersion = dependencies.probeVersion ?? probeReleasedVersion;
     const probeNegativeVersion = dependencies.probeNegativeVersion ?? probeNegativeReleasedVersion;
     const beforeHash = await hashCheckout(fixtureRoot);
+    await recheckOutputRoot();
     const boundary = validateBoundaryReport(await auditBoundary({
       fixtureRoot,
       outputRoot,
@@ -651,8 +741,10 @@ export async function runFalsifier(options = {}, dependencies = {}) {
     const runs = [];
     const negativeRuns = [];
     for (const version of versions) {
+      await recheckOutputRoot();
       const outputPath = path.join(outputRoot, `codex-${version}-positive.json`);
       const run = await probeVersion({ architecture, fixtureRoot, outputPath, version });
+      await recheckOutputRoot();
       validateReleasedReceipt(run.receipt, {
         architecture,
         durationMs: run.durationMs,
@@ -666,6 +758,7 @@ export async function runFalsifier(options = {}, dependencies = {}) {
         receipt: run.receipt
       });
 
+      await recheckOutputRoot();
       const negativeOutputPath = path.join(outputRoot, `codex-${version}-negative.json`);
       const negativeRun = await probeNegativeVersion({
         architecture,
@@ -673,6 +766,7 @@ export async function runFalsifier(options = {}, dependencies = {}) {
         outputPath: negativeOutputPath,
         version
       });
+      await recheckOutputRoot();
       validateNegativeReceipt(negativeRun.receipt, {
         architecture,
         durationMs: negativeRun.durationMs,
@@ -732,6 +826,7 @@ export async function runFalsifier(options = {}, dependencies = {}) {
         receiptPath: path.basename(receiptPath)
       }))
     };
+    await recheckOutputRoot();
     await writeFile(
       path.join(outputRoot, 'falsifier-summary.json'),
       `${JSON.stringify(evidenceSummary, null, 2)}\n`,

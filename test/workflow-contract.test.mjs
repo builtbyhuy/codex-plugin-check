@@ -78,6 +78,7 @@ test('ordinary CI is least-privilege Node 24 validation on pushes and pull reque
   assert.match(source, /^    runs-on: ubuntu-24\.04$/mu);
   assert.match(source, /^    timeout-minutes: 10$/mu);
   assert.match(source, /^          node-version: 24\.19\.0$/mu);
+  assert.doesNotMatch(source, /CODEX_RELEASED_FALSIFIER_OPT_IN/u);
   assert.equal(
     scalar(stepUsing(source, CHECKOUT).source, 'persist-credentials', 10),
     'false'
@@ -105,6 +106,9 @@ test('strict released falsifier runs only from trusted main pushes or manual dis
     source,
     /^      CODEX_FALSIFIER_OUTPUT_ROOT: artifacts\/released-codex$/mu
   );
+  assert.doesNotMatch(source, /CODEX_RELEASED_FALSIFIER_OPT_IN/u);
+  assert.doesNotMatch(source, /^\s*run: npm test$/mu);
+  assert.equal(source.match(/^\s*run: npm run falsify$/gmu)?.length, 1);
   assert.equal(
     scalar(stepUsing(source, CHECKOUT).source, 'persist-credentials', 10),
     'false'

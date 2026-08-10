@@ -127,6 +127,19 @@ CODEX_PRIOR_VERSION=0.146.1 \
 npm run falsify
 ```
 
+The workflow additionally sets `CODEX_FALSIFIER_OUTPUT_ROOT` to a
+repository-relative evidence directory. Environment-derived output is bound to
+the canonical checkout: every parent component must be a real directory, no
+symlink is followed, and containment is rechecked before evidence writes.
+Programmatic callers of `runFalsifier({ outputRoot })` may intentionally manage
+an arbitrary output location; callers that require checkout containment must
+also pass `outputBoundary`.
+
+Ordinary `npm test` runs skip the real strict released-binary integration test
+unless a trusted operator explicitly sets
+`CODEX_RELEASED_FALSIFIER_OPT_IN=1`. The released workflow does not duplicate
+that expensive test; its single evidence-producing step is `npm run falsify`.
+
 It runs positive and deliberately disabled-skill lanes for both versions and
 writes an evidence ledger. Even after that bounded check passes, its summary
 remains `HOLD` while the separate public-fixture matrix is `UNRUN (0/10)`.

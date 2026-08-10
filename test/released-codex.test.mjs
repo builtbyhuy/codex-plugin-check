@@ -1,7 +1,16 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import net from 'node:net';
-import { access, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  symlink,
+  writeFile
+} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -112,6 +121,42 @@ function dockerServerAvailable() {
   });
 }
 
+async function releasedIntegrationAvailability(environment, inspectDocker) {
+  if (environment.CODEX_RELEASED_FALSIFIER_OPT_IN !== '1') {
+    return {
+      available: false,
+      reason: 'strict released integration requires CODEX_RELEASED_FALSIFIER_OPT_IN=1'
+    };
+  }
+  return inspectDocker();
+}
+
+test('strict integration requires an exact trusted opt-in before inspecting Docker', async () => {
+  let dockerInspections = 0;
+  const inspectDocker = async () => {
+    dockerInspections += 1;
+    return { available: true };
+  };
+
+  for (const value of [undefined, '', '0', 'true']) {
+    const environment = value === undefined
+      ? {}
+      : { CODEX_RELEASED_FALSIFIER_OPT_IN: value };
+    const availability = await releasedIntegrationAvailability(environment, inspectDocker);
+    assert.equal(availability.available, false, value);
+    assert.match(availability.reason, /CODEX_RELEASED_FALSIFIER_OPT_IN=1/);
+  }
+  assert.equal(dockerInspections, 0);
+  assert.deepEqual(
+    await releasedIntegrationAvailability(
+      { CODEX_RELEASED_FALSIFIER_OPT_IN: '1' },
+      inspectDocker
+    ),
+    { available: true }
+  );
+  assert.equal(dockerInspections, 1);
+});
+
 test('falsifier requires the exact current and prior released Codex versions before work starts', async () => {
   let touchedDocker = false;
   const dependencies = {
@@ -143,6 +188,7 @@ test('falsifier accepts only a safe repo-relative deterministic evidence root', 
     falsifierOptionsFromEnvironment(environment, '/checkout'),
     {
       env: environment,
+      outputBoundary: '/checkout',
       outputRoot: '/checkout/artifacts/released-codex'
     }
   );
@@ -155,6 +201,46 @@ test('falsifier accepts only a safe repo-relative deterministic evidence root', 
       /relative evidence directory/i
     );
   }
+});
+
+test('environment evidence root rejects a symlink parent without changing outside state', async (t) => {
+  const checkoutRoot = await temporaryDirectory(t, 'released-codex-checkout-');
+  const outsideRoot = await temporaryDirectory(t, 'released-codex-outside-');
+  const fixtureRoot = await temporaryDirectory(t, 'released-codex-fixture-');
+  const sentinel = path.join(outsideRoot, 'outside-sentinel.txt');
+  const sentinelContents = 'outside must remain unchanged\n';
+  await writeFile(sentinel, sentinelContents, { mode: 0o600 });
+  await symlink(outsideRoot, path.join(checkoutRoot, 'artifacts'), 'dir');
+  const options = falsifierOptionsFromEnvironment({
+    ...EXACT_ENV,
+    CODEX_FALSIFIER_OUTPUT_ROOT: 'artifacts/released-codex'
+  }, checkoutRoot);
+  const hashes = ['stable', 'stable'];
+
+  await assert.rejects(runFalsifier({
+    ...options,
+    platform: 'linux',
+    architecture: 'x64',
+    fixtureRoot,
+    personalMarkers: []
+  }, {
+    assertStrictDocker: async () => {},
+    hashCheckout: async () => hashes.shift(),
+    auditBoundary: async () => boundaryReport(),
+    probeVersion: async ({ outputPath, version }) => {
+      const receipt = releasedReceipt(version);
+      await writeFile(outputPath, `${JSON.stringify(receipt)}\n`);
+      return { durationMs: 1, receipt };
+    },
+    probeNegativeVersion: async ({ outputPath, version }) => {
+      const receipt = negativeReceipt(version);
+      await writeFile(outputPath, `${JSON.stringify(receipt)}\n`);
+      return { durationMs: 1, receipt };
+    }
+  }), /symlink.*evidence|evidence.*symlink/i);
+
+  assert.equal(await readFile(sentinel, 'utf8'), sentinelContents);
+  await assert.rejects(access(path.join(outsideRoot, 'released-codex')), { code: 'ENOENT' });
 });
 
 test('injected orchestration audits the boundary and validates both receipts without changing checkout', async (t) => {
@@ -609,7 +695,10 @@ test('falsifier removes its default owned output root on failure', async (t) => 
   await assert.rejects(access(ownedOutputRoot), { code: 'ENOENT' });
 });
 
-const strictDocker = await dockerServerAvailable();
+const strictDocker = await releasedIntegrationAvailability(
+  process.env,
+  dockerServerAvailable
+);
 test('released Codex current and prior binaries pass the real strict Linux falsifier', {
   skip: strictDocker.available ? false : strictDocker.reason,
   timeout: 8 * 60_000
