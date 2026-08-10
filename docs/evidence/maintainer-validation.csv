@@ -1,0 +1,3 @@
+repository,maintainer,public_workflow,contact_route,sent_at,receipt_url,ran_at,unknown_defect,retained_required_ci,response_url,status
+https://github.com/bitrouter/bitrouter,@bitrouter,https://github.com/bitrouter/bitrouter/blob/main/.github/workflows/ci.yml,https://github.com/bitrouter/bitrouter/discussions,,,,,,,READY_AFTER_PUBLIC_RELEASE
+https://github.com/Cassette-Editor/oh-my-cassette,@Cassette-Editor,https://github.com/Cassette-Editor/oh-my-cassette/blob/main/.github/workflows/ci.yml,https://github.com/Cassette-Editor/oh-my-cassette/discussions,,,,,,,READY_AFTER_PUBLIC_RELEASE
