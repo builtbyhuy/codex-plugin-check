@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { access, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -23,6 +23,38 @@ function actionEnv(fixture) {
     'INPUT_ISOLATION': 'strict',
     GITHUB_OUTPUT: fixture.githubOutput
   };
+}
+
+function captureIo() {
+  let stdout = '';
+  let stderr = '';
+  return {
+    io: {
+      stdout: { write: (value) => { stdout += String(value); } },
+      stderr: { write: (value) => { stderr += String(value); } }
+    },
+    stdout: () => stdout,
+    stderr: () => stderr
+  };
+}
+
+function validReceipt(overrides = {}) {
+  return {
+    schemaVersion: '0.1.0',
+    status: 'PASS',
+    codexVersion: '0.147.0',
+    platform: 'linux-x64',
+    plugin: { name: 'sample', marketplace: 'local', sourceRoot: '/workspace' },
+    capabilities: [],
+    isolation: { mode: 'strict', network: 'denied', hostState: 'denied' },
+    ...overrides
+  };
+}
+
+async function atomicReceipt(receiptPath, receipt) {
+  const temporary = `${receiptPath}.next`;
+  await writeFile(temporary, `${JSON.stringify(receipt, null, 2)}\n`);
+  await rename(temporary, receiptPath);
 }
 
 function parseGithubOutput(text) {
@@ -127,22 +159,110 @@ test('GitHub output delimiters are retried if a candidate appears as a value lin
   const { runAction } = await import('../src/action.mjs');
   const fixture = await makeFixture(t);
   const collision = 'codex_plugin_check_collision';
-  const receipt = {
-    schemaVersion: '0.1.0',
-    status: collision,
-    codexVersion: '0.147.0'
-  };
-  const uuids = ['collision', 'safe-status', 'safe-receipt', 'safe-version'];
+  const receipt = validReceipt({ codexVersion: collision });
+  const uuids = ['status-id', 'receipt-id', 'collision', 'safe-version'];
+  const env = actionEnv(fixture);
+  env['INPUT_CODEX-VERSION'] = collision;
 
-  await runAction(actionEnv(fixture), process, {
+  await runAction(env, process, {
     cliMain: async () => {
       await writeFile(fixture.receiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
-      return 2;
+      return 0;
     },
     randomUUID: () => uuids.shift()
   });
 
   const outputs = parseGithubOutput(await readFile(fixture.githubOutput, 'utf8'));
-  assert.equal(outputs.status.value, collision);
-  assert.equal(outputs.status.delimiter, 'codex_plugin_check_safe-status');
+  assert.equal(outputs['codex-version'].value, collision);
+  assert.equal(outputs['codex-version'].delimiter, 'codex_plugin_check_safe-version');
+});
+
+test('tool error never republishes a preexisting PASS receipt', async (t) => {
+  const { runAction } = await import('../src/action.mjs');
+  const fixture = await makeFixture(t);
+  await writeFile(fixture.receiptPath, `${JSON.stringify(validReceipt(), null, 2)}\n`);
+  const capture = captureIo();
+
+  const code = await runAction(actionEnv(fixture), capture.io, {
+    cliMain: async () => 2
+  });
+
+  assert.equal(code, 2);
+  await assert.rejects(access(fixture.githubOutput), { code: 'ENOENT' });
+  assert.doesNotMatch(capture.stdout(), /PASS|success/i);
+});
+
+test('an unchanged preexisting receipt is not evidence for the current invocation', async (t) => {
+  const { runAction } = await import('../src/action.mjs');
+  const fixture = await makeFixture(t);
+  await writeFile(fixture.receiptPath, `${JSON.stringify(validReceipt(), null, 2)}\n`);
+  const capture = captureIo();
+
+  const code = await runAction(actionEnv(fixture), capture.io, {
+    cliMain: async () => 0
+  });
+
+  assert.equal(code, 2);
+  assert.match(capture.stderr(), /fresh receipt/i);
+  await assert.rejects(access(fixture.githubOutput), { code: 'ENOENT' });
+});
+
+test('Action rejects a fresh receipt whose status disagrees with the CLI exit', async (t) => {
+  const { runAction } = await import('../src/action.mjs');
+  const fixture = await makeFixture(t);
+  const capture = captureIo();
+
+  const code = await runAction(actionEnv(fixture), capture.io, {
+    cliMain: async () => {
+      await atomicReceipt(fixture.receiptPath, validReceipt({ status: 'FAIL' }));
+      return 0;
+    }
+  });
+
+  assert.equal(code, 2);
+  assert.match(capture.stderr(), /status.*exit code/i);
+  await assert.rejects(access(fixture.githubOutput), { code: 'ENOENT' });
+});
+
+test('Action validates the current receipt schema and requested Codex version', async (t) => {
+  const { runAction } = await import('../src/action.mjs');
+  for (const receipt of [
+    validReceipt({ schemaVersion: '9.9.9' }),
+    validReceipt({ codexVersion: '0.146.1' })
+  ]) {
+    const fixture = await makeFixture(t);
+    const capture = captureIo();
+    const code = await runAction(actionEnv(fixture), capture.io, {
+      cliMain: async () => {
+        await atomicReceipt(fixture.receiptPath, receipt);
+        return 0;
+      }
+    });
+    assert.equal(code, 2);
+    assert.match(capture.stderr(), /schema|Codex version/i);
+    await assert.rejects(access(fixture.githubOutput), { code: 'ENOENT' });
+  }
+});
+
+test('a genuine atomic replacement is published for the current invocation', async (t) => {
+  const { runAction } = await import('../src/action.mjs');
+  const fixture = await makeFixture(t);
+  await writeFile(
+    fixture.receiptPath,
+    `${JSON.stringify(validReceipt({ status: 'FAIL' }), null, 2)}\n`
+  );
+  const uuids = ['status', 'receipt', 'version'];
+
+  const code = await runAction(actionEnv(fixture), process, {
+    cliMain: async () => {
+      await atomicReceipt(fixture.receiptPath, validReceipt());
+      return 0;
+    },
+    randomUUID: () => uuids.shift()
+  });
+
+  assert.equal(code, 0);
+  const outputs = parseGithubOutput(await readFile(fixture.githubOutput, 'utf8'));
+  assert.equal(outputs.status.value, 'PASS');
+  assert.equal(outputs['codex-version'].value, '0.147.0');
 });

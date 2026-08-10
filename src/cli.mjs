@@ -1,9 +1,19 @@
 #!/usr/bin/env node
 
 import { spawn } from 'node:child_process';
-import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
+import { randomUUID as randomRealUUID } from 'node:crypto';
+import { constants as fsConstants, realpathSync } from 'node:fs';
+import {
+  lstat,
+  mkdir,
+  open,
+  readFile,
+  realpath,
+  rename,
+  rm
+} from 'node:fs/promises';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { checkPlugin as checkRealPlugin } from './check-plugin.mjs';
 import { createIsolation as createRealIsolation } from './isolation.mjs';
 import { exitCodeForStatus } from './receipt.mjs';
@@ -230,11 +240,136 @@ function validateCommonReceipt(receipt, expected) {
   return validStatus;
 }
 
-async function writeReceipt(output, receipt, dependencies) {
+function pathIsWithin(candidate, root) {
+  const relative = path.relative(root, candidate);
+  return relative === '' ||
+    (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+}
+
+async function assertSafeReceiptLeaf(output, inspect) {
+  try {
+    const metadata = await inspect(output);
+    if (metadata.isSymbolicLink()) {
+      throw new Error(`Receipt destination must not be a symlink: ${output}`);
+    }
+    if (metadata.isDirectory()) {
+      throw new Error(`Receipt destination must not be a directory: ${output}`);
+    }
+  } catch (cause) {
+    if (cause?.code === 'ENOENT') return;
+    throw cause;
+  }
+}
+
+async function walkCheckoutDirectory(root, directory, dependencies, createMissing) {
+  const inspect = dependencies.lstat ?? lstat;
   const makeDirectory = dependencies.mkdir ?? mkdir;
-  const write = dependencies.writeFile ?? writeFile;
-  await makeDirectory(path.dirname(output), { recursive: true });
-  await write(output, `${JSON.stringify(receipt, null, 2)}\n`, 'utf8');
+  const relative = path.relative(root, directory);
+  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error('Receipt parent escaped the canonical marketplace root');
+  }
+  const components = relative === '' ? [] : relative.split(path.sep);
+  let current = root;
+  for (const component of ['', ...components]) {
+    if (component !== '') current = path.join(current, component);
+    let metadata;
+    try {
+      metadata = await inspect(current);
+    } catch (cause) {
+      if (cause?.code !== 'ENOENT' || !createMissing || component === '') throw cause;
+      await makeDirectory(current, { mode: 0o700 });
+      metadata = await inspect(current);
+    }
+    if (metadata.isSymbolicLink()) {
+      throw new Error(`Receipt parent must not contain a symlink: ${current}`);
+    }
+    if (!metadata.isDirectory()) {
+      throw new Error(`Receipt parent component is not a directory: ${current}`);
+    }
+  }
+}
+
+async function openExclusiveTemporary(parent, output, dependencies) {
+  const openFile = dependencies.open ?? open;
+  const randomUUID = dependencies.randomUUID ?? randomRealUUID;
+  const flags = fsConstants.O_WRONLY |
+    fsConstants.O_CREAT |
+    fsConstants.O_EXCL |
+    (fsConstants.O_NOFOLLOW ?? 0);
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const identifier = String(randomUUID()).replace(/[^A-Za-z0-9_-]/g, '');
+    if (identifier === '') continue;
+    const temporary = path.join(parent, `.${path.basename(output)}.${identifier}.tmp`);
+    try {
+      return { handle: await openFile(temporary, flags, 0o600), temporary };
+    } catch (cause) {
+      if (cause?.code !== 'EEXIST') throw cause;
+    }
+  }
+  throw new Error('Unable to reserve an exclusive receipt temporary file');
+}
+
+async function writeReceipt(output, receipt, marketplaceRoot, dependencies) {
+  const inspect = dependencies.lstat ?? lstat;
+  const makeDirectory = dependencies.mkdir ?? mkdir;
+  const move = dependencies.rename ?? rename;
+  const remove = dependencies.rm ?? rm;
+  const parent = path.dirname(output);
+  const insideCheckout = pathIsWithin(output, marketplaceRoot);
+  if (output === marketplaceRoot) {
+    throw new Error('Receipt destination must not replace the marketplace root');
+  }
+  if (insideCheckout) {
+    await walkCheckoutDirectory(marketplaceRoot, parent, dependencies, true);
+  } else {
+    await makeDirectory(parent, { recursive: true, mode: 0o700 });
+  }
+  await assertSafeReceiptLeaf(output, inspect);
+  if (insideCheckout) {
+    await walkCheckoutDirectory(marketplaceRoot, parent, dependencies, false);
+  }
+
+  let handle;
+  let temporary;
+  try {
+    ({ handle, temporary } = await openExclusiveTemporary(parent, output, dependencies));
+    let primaryError;
+    try {
+      await handle.writeFile(`${JSON.stringify(receipt, null, 2)}\n`, 'utf8');
+      await handle.sync();
+    } catch (cause) {
+      primaryError = cause;
+    }
+    try {
+      await handle.close();
+    } catch (cause) {
+      primaryError ??= cause;
+    }
+    handle = undefined;
+    if (primaryError) throw primaryError;
+    if (insideCheckout) {
+      await walkCheckoutDirectory(marketplaceRoot, parent, dependencies, false);
+    }
+    await assertSafeReceiptLeaf(output, inspect);
+    await move(temporary, output);
+    temporary = undefined;
+  } catch (cause) {
+    if (handle) {
+      try {
+        await handle.close();
+      } catch {
+        // Preserve the receipt-delivery failure.
+      }
+    }
+    if (temporary) {
+      try {
+        await remove(temporary, { force: true });
+      } catch {
+        // Preserve the receipt-delivery failure.
+      }
+    }
+    throw cause;
+  }
 }
 
 function printSummary(io, receipt, quiet) {
@@ -271,7 +406,7 @@ async function runEnv(options, io, dependencies) {
   })) {
     throw new Error('Env receipt must use env isolation with not_enforced boundaries');
   }
-  await writeReceipt(options.output, receipt, dependencies);
+  await writeReceipt(options.output, receipt, options.marketplaceRoot, dependencies);
   printSummary(io, receipt, options.quiet);
   return code;
 }
@@ -361,7 +496,12 @@ async function runStrict(options, io, dependencies) {
       hostState: 'denied'
     }
   };
-  await writeReceipt(options.output, certifiedReceipt, dependencies);
+  await writeReceipt(
+    options.output,
+    certifiedReceipt,
+    options.marketplaceRoot,
+    dependencies
+  );
   printSummary(io, certifiedReceipt, options.quiet);
   return childCode;
 }
@@ -400,8 +540,12 @@ export async function main(argv, io = process, dependencies = {}) {
 }
 
 function isEntrypoint() {
-  return process.argv[1] !== undefined &&
-    pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
+  if (process.argv[1] === undefined) return false;
+  try {
+    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
 }
 
 if (isEntrypoint()) {

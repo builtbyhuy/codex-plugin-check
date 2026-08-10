@@ -1,5 +1,16 @@
 import assert from 'node:assert/strict';
-import { access, mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import {
+  access,
+  mkdtemp,
+  mkdir,
+  readFile,
+  realpath,
+  rm,
+  stat,
+  symlink,
+  writeFile
+} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -137,6 +148,28 @@ async function strictHarness(fixture, options = {}) {
   };
 }
 
+function runChild(command, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: options.cwd,
+      env: options.env ?? process.env,
+      shell: false,
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    const stdout = [];
+    const stderr = [];
+    child.stdout.on('data', (chunk) => stdout.push(Buffer.from(chunk)));
+    child.stderr.on('data', (chunk) => stderr.push(Buffer.from(chunk)));
+    child.once('error', reject);
+    child.once('exit', (code, signal) => resolve({
+      code,
+      signal,
+      stdout: Buffer.concat(stdout).toString('utf8'),
+      stderr: Buffer.concat(stderr).toString('utf8')
+    }));
+  });
+}
+
 test('help is available without probe inputs', async () => {
   const { main } = await import('../src/cli.mjs');
   const capture = captureIo();
@@ -228,6 +261,7 @@ test('env mode verifies Codex first, probes the canonical checkout, and writes d
   assert.equal(checkOptions.cwd, await realpath(fixture.cwd));
   assert.equal(checkOptions.output, path.resolve(fixture.output));
   assert.equal(await readFile(fixture.output, 'utf8'), `${JSON.stringify(expected, null, 2)}\n`);
+  assert.equal((await stat(fixture.output)).mode & 0o777, 0o600);
   assert.equal(capture.stdout(), 'codex-plugin-check: PASS (sample, Codex 0.147.0)\n');
   assert.equal(capture.stderr(), '');
 });
@@ -316,26 +350,73 @@ test('thrown probe errors return 2 without writing or claiming success', async (
   await assert.rejects(access(fixture.output), { code: 'ENOENT' });
 });
 
+test('env receipt delivery rejects an existing leaf symlink without overwriting its victim', async (t) => {
+  const { main } = await import('../src/cli.mjs');
+  const fixture = await makeFixture(t);
+  const victim = path.join(fixture.root, 'victim.txt');
+  await mkdir(path.dirname(fixture.output), { recursive: true });
+  await writeFile(victim, 'keep env victim\n');
+  await symlink(victim, fixture.output);
+  const capture = captureIo();
+
+  const code = await main(requiredArgs(fixture), capture.io, {
+    runProcess: async () => ({ code: 0, stdout: 'codex-cli 0.147.0\n', stderr: '' }),
+    checkPlugin: async () => receiptFor(fixture)
+  });
+
+  assert.equal(code, 2);
+  assert.equal(await readFile(victim, 'utf8'), 'keep env victim\n');
+  assert.match(capture.stderr(), /symlink/i);
+  assert.doesNotMatch(capture.stdout(), /PASS|success/i);
+});
+
+test('atomic receipt delivery removes its exclusive temporary after a rename error', async (t) => {
+  const { main } = await import('../src/cli.mjs');
+  const fixture = await makeFixture(t);
+  const temporary = path.join(
+    path.dirname(fixture.output),
+    `.${path.basename(fixture.output)}.fixed-id.tmp`
+  );
+  const capture = captureIo();
+
+  const code = await main(requiredArgs(fixture), capture.io, {
+    runProcess: async () => ({ code: 0, stdout: 'codex-cli 0.147.0\n', stderr: '' }),
+    checkPlugin: async () => receiptFor(fixture),
+    randomUUID: () => 'fixed-id',
+    rename: async () => { throw new Error('synthetic rename failure'); }
+  });
+
+  assert.equal(code, 2);
+  assert.match(capture.stderr(), /synthetic rename failure/);
+  assert.doesNotMatch(capture.stdout(), /PASS|success/i);
+  await assert.rejects(access(temporary), { code: 'ENOENT' });
+  await assert.rejects(access(fixture.output), { code: 'ENOENT' });
+});
+
 test('strict mode invokes one env-mode child with container paths and certifies only after finalizers', async (t) => {
   const { main } = await import('../src/cli.mjs');
   const fixture = await makeFixture(t);
+  const strictOutput = path.join(fixture.marketplaceRoot, 'receipts', 'strict.json');
   const staged = stagedReceipt('FAIL');
   const harness = await strictHarness(fixture, {
     receipt: staged,
     childCode: 1,
     cleanupInspect: async () => {
-      await assert.rejects(access(fixture.output), { code: 'ENOENT' });
+      await assert.rejects(access(strictOutput), { code: 'ENOENT' });
     }
   });
   const capture = captureIo();
 
-  const code = await main(requiredArgs(fixture, { '--isolation': 'strict' }), capture.io, harness.dependencies);
+  const code = await main(requiredArgs(fixture, {
+    '--isolation': 'strict',
+    '--output': strictOutput
+  }), capture.io, harness.dependencies);
 
   assert.equal(code, 1);
   assert.deepEqual(harness.events, ['create', 'wrap', 'child', 'integrity', 'cleanup']);
   assert.deepEqual(harness.createOptions(), {
     targetRoot: await realpath(fixture.marketplaceRoot),
-    receiptPath: path.resolve(fixture.output),
+    receiptPath: path.resolve(strictOutput),
     mode: 'strict',
     platform: 'linux',
     codexVersion: '0.147.0'
@@ -354,7 +435,7 @@ test('strict mode invokes one env-mode child with container paths and certifies 
       '--quiet'
     ]
   });
-  const certified = JSON.parse(await readFile(fixture.output, 'utf8'));
+  const certified = JSON.parse(await readFile(strictOutput, 'utf8'));
   assert.deepEqual(
     { ...certified, isolation: staged.isolation },
     staged,
@@ -367,6 +448,31 @@ test('strict mode invokes one env-mode child with container paths and certifies 
   });
   assert.equal(capture.stdout(), 'codex-plugin-check: FAIL (sample, Codex 0.147.0)\n');
   assert.equal(capture.stderr(), '');
+});
+
+test('strict receipt delivery rejects a checkout parent symlink without overwriting its victim', async (t) => {
+  const { main } = await import('../src/cli.mjs');
+  const fixture = await makeFixture(t);
+  const victimDirectory = path.join(fixture.root, 'victim-directory');
+  const victim = path.join(victimDirectory, 'strict.json');
+  const linkedDirectory = path.join(fixture.marketplaceRoot, 'receipts');
+  const output = path.join(linkedDirectory, 'strict.json');
+  await mkdir(victimDirectory);
+  await writeFile(victim, 'keep strict victim\n');
+  await symlink(victimDirectory, linkedDirectory, 'dir');
+  const harness = await strictHarness(fixture);
+  const capture = captureIo();
+
+  const code = await main(requiredArgs(fixture, {
+    '--isolation': 'strict',
+    '--output': output
+  }), capture.io, harness.dependencies);
+
+  assert.equal(code, 2);
+  assert.deepEqual(harness.events, ['create', 'wrap', 'child', 'integrity', 'cleanup']);
+  assert.equal(await readFile(victim, 'utf8'), 'keep strict victim\n');
+  assert.match(capture.stderr(), /symlink/i);
+  assert.doesNotMatch(capture.stdout(), /PASS|success/i);
 });
 
 test('strict mode rejects child status and exit-code disagreement after running every finalizer', async (t) => {
@@ -497,4 +603,40 @@ test('strict cwd outside the mounted marketplace is rejected before Docker setup
   assert.equal(code, 2);
   assert.equal(created, false);
   assert.match(capture.stderr(), /strict --cwd.*inside/i);
+});
+
+test('the packed npm bin executes help through its installed symlink', async (t) => {
+  const fixture = await makeFixture(t);
+  const repositoryRoot = await realpath(new URL('..', import.meta.url));
+  const packDirectory = path.join(fixture.root, 'pack');
+  const installDirectory = path.join(fixture.root, 'install');
+  await mkdir(packDirectory);
+  await mkdir(installDirectory);
+
+  const packed = await runChild('npm', [
+    'pack', '--pack-destination', packDirectory, '--json'
+  ], { cwd: repositoryRoot });
+  assert.equal(packed.code, 0, packed.stderr);
+  const [{ filename }] = JSON.parse(packed.stdout);
+  const tarball = path.join(packDirectory, filename);
+  const installed = await runChild('npm', [
+    'install',
+    '--ignore-scripts',
+    '--no-audit',
+    '--no-fund',
+    '--prefix', installDirectory,
+    tarball
+  ], { cwd: repositoryRoot });
+  assert.equal(installed.code, 0, installed.stderr);
+  const bin = path.join(
+    installDirectory,
+    'node_modules',
+    '.bin',
+    process.platform === 'win32' ? 'codex-plugin-check.cmd' : 'codex-plugin-check'
+  );
+
+  const help = await runChild(bin, ['--help']);
+
+  assert.equal(help.code, 0, help.stderr);
+  assert.match(help.stdout, /Usage: codex-plugin-check/);
 });
