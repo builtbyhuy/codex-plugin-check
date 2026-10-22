@@ -55,7 +55,13 @@ lines.on('line', (line) => {
     if (mode === 'stdin-race') {
       process.stdin.on('error', () => {});
       lines.close();
-      closeSync(0);
+      if (process.platform === 'win32') {
+        process.stdin.once('close', () => process.stderr.write('stdin-closed\n'));
+        process.stdin.destroy();
+      } else {
+        closeSync(0);
+        process.stderr.write('stdin-closed\n');
+      }
     }
     return;
   }

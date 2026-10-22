@@ -213,7 +213,7 @@ test('binds the installed plugin source subtree and version when requested', asy
 test('canonicalizes a symlink marketplace root across every Codex boundary', async () => {
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), 'codex-plugin-check-symlink-'));
   const linkedRoot = path.join(temporaryRoot, 'marketplace');
-  await symlink(fixtureRoot, linkedRoot, 'dir');
+  await symlink(fixtureRoot, linkedRoot, process.platform === 'win32' ? 'junction' : 'dir');
   try {
     const observed = harness();
     const receipt = await checkPlugin(
@@ -337,7 +337,12 @@ test('rejects a matching marketplace manifest symlink that escapes the checkout'
   const agentsDirectory = path.join(temporaryRoot, '.agents', 'plugins');
   await mkdir(agentsDirectory, { recursive: true });
   await writeFile(outsideManifest, '{"name":"local-marketplace","plugins":[]}\n');
-  await symlink(outsideManifest, path.join(agentsDirectory, 'marketplace.json'));
+  // A junction exercises the same canonical boundary on unprivileged Windows.
+  await symlink(
+    process.platform === 'win32' ? outsideRoot : outsideManifest,
+    path.join(agentsDirectory, 'marketplace.json'),
+    process.platform === 'win32' ? 'junction' : 'file'
+  );
   let reads = 0;
   try {
     await assert.rejects(

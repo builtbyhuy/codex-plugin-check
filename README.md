@@ -1,72 +1,30 @@
 # Codex Plugin Check
 
-Codex Plugin Check is an experimental, evidence-first GitHub Action and CLI
-for checking how a released Codex binary sees one local plugin checkout. It
-produces a deterministic JSON receipt from Codex-owned install, declaration,
-skill-registry, and hook-registry responses.
+**Check what a pinned Codex release discovers from your plugin checkout.**
 
-`v0.1.1` is the current experimental distribution release; `v0.1.0` remains
-the evidence-bearing release for the bounded synthetic falsifier and
-ten-public-fixture strict matrix (`10/10` fixtures, `20/20` cells). The project
-remains **HOLD for adoption and Codex for Open Source application claims**
-because no independent run, retained downstream workflow, or public
-maintenance history exists yet. This is not a production-readiness claim.
+A plugin manifest can look correct while an installed skill is missing, a hook
+is untrusted, or the installed identity points somewhere unexpected. This Node.js
+CLI and GitHub Action reconciles those surfaces into a machine-readable receipt
+before you test the plugin's behavior.
 
-## What the receipt proves
+The check sends no model request and does not start plugin hooks, MCP servers or
+app authentication. It answers a specific release question: **did this exact
+Codex version discover the expected capabilities from this source?**
 
-For the requested checkout and exact Codex version, the checker correlates:
+## How it works
 
-- `codex plugin marketplace add`, `plugin add`, and `plugin list` JSON;
-- Codex app-server `plugin/read` declarations;
-- safe `skills/list` and `hooks/list` discovery registries;
-- the requested plugin, marketplace, source checkout, and installed cache
-  identity;
-- the isolation boundary that was actually used.
+1. Add the local marketplace and install the requested plugin in temporary state.
+2. Reconcile install/list identity with Codex's plugin, skill and hook registries.
+3. Write a JSON receipt and return a status-specific exit code.
 
-A `PASS` means the declared skills and hooks required by this policy were found
-in those Codex-owned registries. It does not mean the plugin is secure, its
-runtime behavior is correct, or its external integrations work.
+The strict Linux/Docker probe denies network access, mounts the source read-only
+and excludes your personal Codex home. Image preparation can download the pinned
+Codex package; the probe itself runs without network access.
 
-MCP servers and apps remain `DECLARED_ONLY`. The checker intentionally does not
-start an MCP server or enter an app authentication flow, so it makes no claim
-about their effective runtime behavior.
+## GitHub Action
 
-## No-execution boundary
-
-The checker never sends a model request or asks Codex to execute plugin hooks,
-MCP servers, plugin scripts, apps, or authentication flows. It disables remote
-plugin discovery and does not mount personal Codex or agent state into strict
-mode. In the exact synthetic fixture, hook and MCP commands are execution
-sentinels: if Codex starts either command during the falsifier, the run fails
-before isolation cleanup. Third-party fixture checks rely on this bounded API
-path and do not claim universal per-fixture execution tracing.
-
-Network access is permitted only while Docker prepares an image containing the
-exact released Codex package. The complete strict probe then runs once with
-network disabled, a read-only root and checkout, no host home/config mount, and
-only owned state plus receipt paths writable.
-
-## Isolation modes
-
-| Mode | Supported host | Meaning |
-| --- | --- | --- |
-| `strict` | Linux with Docker | OS-enforced network and host-state denial; eligible for a certified receipt |
-| `env` | Linux, macOS, or Windows | Temporary allowlisted process state only; diagnostic and never strict-certified |
-
-Strict mode fails closed when Linux or Docker is unavailable. It never falls
-back to `env`. macOS and Windows currently have no strict implementation.
-
-## GitHub Action distribution
-
-The JavaScript Action in [`action.yml`](action.yml) is the intended primary
-distribution surface and uses the Node 24 Action runtime. The
-[`v0.1.0` release](https://github.com/builtbyhuy/codex-plugin-check/releases/tag/v0.1.0)
-contains the sanitized strict-matrix receipts and summary; the
-[`v0.1.1` release](https://github.com/builtbyhuy/codex-plugin-check/releases/tag/v0.1.1)
-adds GitHub Marketplace branding metadata without changing the evidence gates.
-Pin the Action to a reviewed full commit SHA, not a floating branch or tag. The
-SHA below is the exact code tree exercised by the 20-cell public fixture
-matrix:
+Use a reviewed full commit SHA. This example pins the implementation exercised
+by the archived two-version public-fixture matrix:
 
 ```yaml
 jobs:
@@ -75,13 +33,12 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Check out plugin source without credentials
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
 
-      - name: Check released Codex discovery
-        id: codex-plugin-check
+      - name: Check plugin discovery
+        id: discovery
         uses: builtbyhuy/codex-plugin-check@3285a65bab2ba805665c6be4e4349874fc7be417
         with:
           marketplace-root: .
@@ -90,22 +47,14 @@ jobs:
           isolation: strict
 ```
 
-Strict mode requires an Ubuntu/Linux runner with Docker and writes the default
-sanitized receipt to `conformance.json`. Replace the plugin name and, when the
-marketplace manifest is below the repository root, `marketplace-root`.
-
-Action inputs cover the general check: `marketplace-root`, `plugin`,
-`codex-version`, `codex`, `cwd`, `output`, and `isolation`. The fixed public
-matrix additionally uses CLI-only `expected-plugin-root` and
-`expected-plugin-version` gates. Action outputs are `status`, the full receipt,
-and the observed `codex-version`.
+Replace the plugin name and marketplace path. The runner needs Linux with Docker.
+The Action exposes `status`, `receipt` and `codex-version`; the default receipt
+file is `conformance.json`. See [`action.yml`](action.yml) for all inputs.
 
 ## CLI diagnostic example
 
-From this repository checkout, this copy-paste example exercises the synthetic
-marketplace in diagnostic mode. Replace the marketplace and plugin values for
-your own checkout. The installed `codex` command must report the exact version
-passed below.
+From this checkout, the command below checks the included synthetic fixture.
+The installed `codex` binary must report the exact stable version supplied.
 
 ```sh
 node ./src/cli.mjs \
@@ -116,87 +65,57 @@ node ./src/cli.mjs \
   --isolation env
 ```
 
-The example uses `env`, so its receipt must say `network: "not_enforced"` and
-`hostState: "not_enforced"`. Use strict mode only on Linux with Docker:
+For your plugin, replace `--marketplace-root` and `--plugin`. `--codex` accepts a
+binary path; `--expected-plugin-root` and `--expected-plugin-version` can bind the
+expected source subtree and installed version. Run `node ./src/cli.mjs --help`.
 
-```sh
-node ./src/cli.mjs \
-  --marketplace-root ./path/to/marketplace \
-  --plugin plugin-name \
-  --codex-version 0.147.0 \
-  --output ./conformance.json \
-  --isolation strict
-```
+| Mode | Host | Boundary |
+| --- | --- | --- |
+| `strict` | Linux with Docker | Network-denied probe, read-only source, isolated state; fails closed if unavailable |
+| `env` | Linux, macOS, Windows | Temporary allowlisted process state; network and host access are not OS-enforced |
 
-## Receipt and exit contract
-
-Receipts conform to [`docs/receipt.schema.json`](docs/receipt.schema.json).
-Every capability has one of these states:
-
-- `DISCOVERED_EFFECTIVE`
-- `DISCOVERED_UNTRUSTED`
-- `DECLARED_ONLY`
-- `UNOBSERVABLE`
-- `MISSING`
-
-Run outcomes and CLI/Action exit codes are stable:
+## Read the result
 
 | Outcome | Exit | Meaning |
 | --- | ---: | --- |
-| `PASS` | `0` | Required safe discovery evidence is present |
-| `FAIL` | `1` | A required declared capability is missing |
-| Input/tool error | `2` | The request, tool, schema, or evidence was invalid; a valid receipt is not guaranteed |
-| `INCONCLUSIVE` | `3` | A requested surface cannot be observed safely through the released API |
-| `ISOLATION_VIOLATION` | `4` | The required isolation boundary was violated |
+| `PASS` | 0 | Required discovery evidence is present |
+| `FAIL` | 1 | A required declared capability is missing |
+| Input/tool error | 2 | The request or tool evidence is invalid; a valid receipt is not guaranteed |
+| `INCONCLUSIVE` | 3 | A requested surface cannot be observed safely |
+| `ISOLATION_VIOLATION` | 4 | The requested boundary was violated |
 
-`DISCOVERED_UNTRUSTED` and `DECLARED_ONLY` are explicit evidence states; neither
-silently claims execution. Under the current policy they may appear in a
-semantically valid `PASS` receipt when no required capability is missing.
+Each capability records its own state: `DISCOVERED_EFFECTIVE`,
+`DISCOVERED_UNTRUSTED`, `DECLARED_ONLY`, `UNOBSERVABLE` or `MISSING`.
+An untrusted hook can be discovered without running it. MCP servers and apps
+remain declaration-only. A discovery `PASS` is not a runtime integration test
+or a security assessment. The [receipt schema](docs/receipt.schema.json) defines
+the full contract.
 
-## Released-Codex falsifier
+## Inspect the engineering
 
-The bounded falsifier accepts exactly Codex `0.147.0` and prior `0.146.1`:
+- [Public fixture matrix](docs/evidence/public-fixture-matrix.md): ten pinned
+  plugin fixtures across Codex 0.146.1 and 0.147.0, with retained receipts and
+  input identities. Nine fixtures were direct; one used a documented adapter.
+- [Released-binary falsifier](docs/evidence/technical-falsifier.md): positive and
+  deliberately missing-skill cases, isolation canaries and execution sentinels.
+- [Windows and Linux validation](docs/evidence/portable-tests-2026-10-22.md):
+  native-path, link-boundary, process-shutdown and installed-package checks.
+- [Evidence archive](https://github.com/builtbyhuy/codex-plugin-check/releases/tag/v0.1.0):
+  the recorded Linux public-fixture run. These are historical pinned checks,
+  rather than a claim about every future Codex release.
 
-```sh
-CODEX_CURRENT_VERSION=0.147.0 \
-CODEX_PRIOR_VERSION=0.146.1 \
-npm run falsify
-```
-
-The workflow additionally sets `CODEX_FALSIFIER_OUTPUT_ROOT` to a
-repository-relative evidence directory. Environment-derived output is bound to
-the canonical checkout: every parent component must be a real directory, no
-symlink is followed, and containment is rechecked before evidence writes.
-Programmatic callers of `runFalsifier({ outputRoot })` may intentionally manage
-an arbitrary output location; callers that require checkout containment must
-also pass `outputBoundary`.
-
-Ordinary `npm test` runs skip the real strict released-binary integration test
-unless a trusted operator explicitly sets
-`CODEX_RELEASED_FALSIFIER_OPT_IN=1`. The released workflow does not duplicate
-that expensive test; its single evidence-producing step is `npm run falsify`.
-
-It runs positive and deliberately disabled-skill lanes for both versions and
-writes an evidence ledger. That bounded artifact remains `HOLD` because it does
-not ingest the separate public-fixture result. The current project ledger links
-the independently reconciled public matrix `PASS` (`10/10`, `20/20`) while
-retaining `HOLD` for adoption and application readiness.
-See [`docs/evidence/technical-falsifier.md`](docs/evidence/technical-falsifier.md)
-and [`docs/evidence/public-fixture-matrix.md`](docs/evidence/public-fixture-matrix.md)
-for the two evidence boundaries.
-
-## Development
-
-Node 24 is required. There are no runtime or development dependencies.
+The ordinary suite runs without a model or a Codex installation:
 
 ```sh
-npm test
+node --test
 npm pack --dry-run
 ```
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) before changing discovery or isolation
-behavior and [`SECURITY.md`](SECURITY.md) for private vulnerability reporting.
+Use Node 24 with its bundled npm. There are no runtime or development dependencies. The real
+released-binary test is opt-in and requires Linux/Docker; `node --test` does not
+silently launch it. See [Contributing](CONTRIBUTING.md) for local checks and
+[Security](SECURITY.md) for reports.
 
 ## License
 
-MIT. See [`LICENSE`](LICENSE).
+MIT. See [LICENSE](LICENSE).

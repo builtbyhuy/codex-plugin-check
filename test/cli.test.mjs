@@ -180,10 +180,11 @@ async function strictHarness(fixture, options = {}) {
 
 function runChild(command, args, options = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
+    const usesCmd = process.platform === 'win32' && command.endsWith('.cmd');
+    const child = spawn(usesCmd ? `"${command}"` : command, args, {
       cwd: options.cwd,
       env: options.env ?? process.env,
-      shell: false,
+      shell: usesCmd,
       stdio: ['ignore', 'pipe', 'pipe']
     });
     const stdout = [];
@@ -269,7 +270,7 @@ test('env mode verifies Codex first, probes the canonical checkout, and writes d
   const { main } = await import('../src/cli.mjs');
   const fixture = await makeFixture(t);
   const alias = path.join(fixture.root, 'marketplace-link');
-  await symlink(fixture.marketplaceRoot, alias, 'dir');
+  await symlink(fixture.marketplaceRoot, alias, process.platform === 'win32' ? 'junction' : 'dir');
   const canonicalRoot = await realpath(fixture.marketplaceRoot);
   const expected = receiptFor({ ...fixture, marketplaceRoot: canonicalRoot });
   const events = [];
@@ -283,7 +284,7 @@ test('env mode verifies Codex first, probes the canonical checkout, and writes d
   }), capture.io, {
     runProcess: async (command, args, options) => {
       events.push('version');
-      assert.equal(command, '/fixture/codex');
+      assert.equal(command, path.resolve('/fixture/codex'));
       assert.deepEqual(args, ['--version']);
       assert.equal(options.shell, false);
       return { code: 0, stdout: 'codex-cli 0.147.0\n', stderr: '' };
@@ -295,18 +296,21 @@ test('env mode verifies Codex first, probes the canonical checkout, and writes d
     }
   });
 
-  assert.equal(code, 0);
+  assert.equal(code, 0, capture.stderr());
   assert.deepEqual(events, ['version', 'check']);
   assert.equal(checkOptions.marketplaceRoot, canonicalRoot);
   assert.equal(checkOptions.isolation, 'env');
   assert.equal(checkOptions.codexVersion, '0.147.0');
-  assert.equal(checkOptions.codex, '/fixture/codex');
+  assert.equal(checkOptions.codex, path.resolve('/fixture/codex'));
   assert.equal(checkOptions.cwd, await realpath(fixture.cwd));
   assert.equal(checkOptions.output, path.resolve(fixture.output));
   assert.equal(checkOptions.expectedPluginRoot, await realpath(fixture.cwd));
   assert.equal(checkOptions.expectedPluginVersion, '1.0.0');
   assert.equal(await readFile(fixture.output, 'utf8'), `${JSON.stringify(expected, null, 2)}\n`);
-  assert.equal((await stat(fixture.output)).mode & 0o777, 0o600);
+  // Windows does not expose POSIX owner-only permissions through stat().mode.
+  if (process.platform !== 'win32') {
+    assert.equal((await stat(fixture.output)).mode & 0o777, 0o600);
+  }
   assert.equal(capture.stdout(), 'codex-plugin-check: PASS (sample, Codex 0.147.0)\n');
   assert.equal(capture.stderr(), '');
 });
@@ -494,10 +498,17 @@ test('thrown probe errors return 2 without writing or claiming success', async (
 test('env receipt delivery rejects an existing leaf symlink without overwriting its victim', async (t) => {
   const { main } = await import('../src/cli.mjs');
   const fixture = await makeFixture(t);
-  const victim = path.join(fixture.root, 'victim.txt');
+  const victimDirectory = path.join(fixture.root, 'victim-directory');
+  const victim = path.join(process.platform === 'win32' ? victimDirectory : fixture.root, 'victim.txt');
   await mkdir(path.dirname(fixture.output), { recursive: true });
+  await mkdir(victimDirectory);
   await writeFile(victim, 'keep env victim\n');
-  await symlink(victim, fixture.output);
+  // The leaf must be rejected before inspecting its target type or writing.
+  await symlink(
+    process.platform === 'win32' ? victimDirectory : victim,
+    fixture.output,
+    process.platform === 'win32' ? 'junction' : 'file'
+  );
   const capture = captureIo();
 
   const code = await main(requiredArgs(fixture), capture.io, {
@@ -604,7 +615,7 @@ test('strict receipt delivery rejects a checkout parent symlink without overwrit
   const output = path.join(linkedDirectory, 'strict.json');
   await mkdir(victimDirectory);
   await writeFile(victim, 'keep strict victim\n');
-  await symlink(victimDirectory, linkedDirectory, 'dir');
+  await symlink(victimDirectory, linkedDirectory, process.platform === 'win32' ? 'junction' : 'dir');
   const harness = await strictHarness(fixture);
   const capture = captureIo();
 
@@ -779,14 +790,18 @@ test('the packed npm bin executes help through its installed symlink', async (t)
   await mkdir(packDirectory);
   await mkdir(installDirectory);
 
-  const packed = await runChild('npm', [
+  // npm test supplies npm_execpath, avoiding .cmd resolution through spawn on Windows.
+  const npmCommand = process.env.npm_execpath ? process.execPath : 'npm';
+  const npmPrefix = process.env.npm_execpath ? [process.env.npm_execpath] : [];
+  const packed = await runChild(npmCommand, [...npmPrefix,
     'pack', '--pack-destination', packDirectory, '--json'
   ], { cwd: repositoryRoot });
   assert.equal(packed.code, 0, packed.stderr);
   const [{ filename }] = JSON.parse(packed.stdout);
   const tarball = path.join(packDirectory, filename);
-  const installed = await runChild('npm', [
+  const installed = await runChild(npmCommand, [...npmPrefix,
     'install',
+    '--offline',
     '--ignore-scripts',
     '--no-audit',
     '--no-fund',

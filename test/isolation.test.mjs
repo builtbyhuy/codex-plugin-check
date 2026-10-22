@@ -130,7 +130,10 @@ test('unsafe receipt basenames are rejected before owned state is created', asyn
   const { createIsolation } = await import('../src/isolation.mjs');
   const fixture = await makeFixture(t);
 
-  for (const receiptPath of ['', '.', '..', '/', 'unsafe\\receipt.json']) {
+  const unsafePaths = ['', '.', '..', path.parse(process.cwd()).root, 'unsafe\0receipt.json'];
+  // Backslash is a filename character on POSIX, but a path separator on Windows.
+  if (process.platform !== 'win32') unsafePaths.push('unsafe\\receipt.json');
+  for (const receiptPath of unsafePaths) {
     await assert.rejects(
       createIsolation({
         ...fixture,
@@ -159,6 +162,8 @@ test('strict mode fails closed when Docker is unavailable', async (t) => {
       },
       {
         parentEnv: { PATH: '/fixture/bin', OPENAI_API_KEY: 'secret' },
+        getuid: () => 1001,
+        getgid: () => 1002,
         dockerAvailable: async (env) => {
           availabilityEnv = env;
           return false;
@@ -339,8 +344,8 @@ test('strict writable output never aliases caller receipt, checkout, tool, or fi
   const fixtureRoot = path.dirname(fixture.targetRoot);
   const targetAlias = path.join(fixtureRoot, 'checkout-link');
   const toolAlias = path.join(fixtureRoot, 'tool-link');
-  await symlink(fixture.targetRoot, targetAlias, 'dir');
-  await symlink(fixture.toolRoot, toolAlias, 'dir');
+  await symlink(fixture.targetRoot, targetAlias, process.platform === 'win32' ? 'junction' : 'dir');
+  await symlink(fixture.toolRoot, toolAlias, process.platform === 'win32' ? 'junction' : 'dir');
   const canonicalTarget = await realpath(fixture.targetRoot);
   const canonicalTool = await realpath(fixture.toolRoot);
   const receiptPaths = [
@@ -405,6 +410,8 @@ test('strict image-build failure removes the owned temporary root', async (t) =>
       },
       {
         dockerAvailable: async () => true,
+        getuid: () => 1001,
+        getgid: () => 1002,
         runCommand: async ({ env }) => {
           ownedRoot = path.dirname(env.HOME);
           throw new Error('synthetic build failure');
@@ -437,9 +444,18 @@ test('checkout integrity rejects changed regular-file bytes', async (t) => {
 test('checkout integrity rejects a changed symlink target', async (t) => {
   const { createIsolation } = await import('../src/isolation.mjs');
   const fixture = await makeFixture(t);
-  await writeFile(path.join(fixture.targetRoot, 'other.json'), '{}\n');
+  // Preserve the file-link case on POSIX; junctions exercise link identity on Windows.
+  const isWindows = process.platform === 'win32';
+  const firstTarget = isWindows ? path.join(fixture.targetRoot, 'first') : 'plugin.json';
+  const secondTarget = isWindows ? path.join(fixture.targetRoot, 'second') : 'other.json';
+  if (isWindows) {
+    await mkdir(firstTarget);
+    await mkdir(secondTarget);
+  } else {
+    await writeFile(path.join(fixture.targetRoot, secondTarget), '{}\n');
+  }
   const linkPath = path.join(fixture.targetRoot, 'current.json');
-  await symlink('plugin.json', linkPath);
+  await symlink(firstTarget, linkPath, isWindows ? 'junction' : 'file');
   const isolation = await createIsolation({
     ...fixture,
     mode: 'env',
@@ -448,7 +464,7 @@ test('checkout integrity rejects a changed symlink target', async (t) => {
   t.after(() => isolation.cleanup());
 
   await rm(linkPath);
-  await symlink('other.json', linkPath);
+  await symlink(secondTarget, linkPath, isWindows ? 'junction' : 'file');
 
   await assert.rejects(
     isolation.assertCheckoutUnchanged(),
@@ -489,7 +505,7 @@ test('cleanup refuses a canonical path outside the owned temporary prefix', asyn
   });
 
   await rm(isolation.root, { recursive: true, force: true });
-  await symlink(outside, isolation.root, 'dir');
+  await symlink(outside, isolation.root, process.platform === 'win32' ? 'junction' : 'dir');
   t.after(() => rm(isolation.root, { force: true }));
 
   await assert.rejects(isolation.cleanup(), /refusing to clean unowned path/i);
