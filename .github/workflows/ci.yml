@@ -39,3 +39,13 @@ jobs:
 
       - name: Inspect package contents
         run: npm pack --dry-run
+
+  required:
+    name: Node 24 tests
+    needs: test
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require every platform
+        run: test "${{ needs.test.result }}" = "success"

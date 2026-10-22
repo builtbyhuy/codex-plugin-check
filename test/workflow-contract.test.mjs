@@ -78,6 +78,11 @@ test('ordinary CI is least-privilege Node 24 validation on pushes and pull reque
   assert.match(source, /^    runs-on: \$\{\{ matrix\.os \}\}$/mu);
   assert.match(source, /^      fail-fast: false$/mu);
   assert.match(source, /^        os: \[ubuntu-24\.04, windows-2025\]$/mu);
+  // Keep the protected branch's stable check gated on the entire platform matrix.
+  assert.match(source, /^    name: Node 24 tests$/mu);
+  assert.match(source, /^    needs: test$/mu);
+  assert.match(source, /^    if: \$\{\{ always\(\) \}\}$/mu);
+  assert.match(source, /^        run: test "\$\{\{ needs\.test\.result \}\}" = "success"$/mu);
   assert.match(source, /^    timeout-minutes: 10$/mu);
   assert.match(source, /^          node-version: 24\.19\.0$/mu);
   assert.doesNotMatch(source, /CODEX_RELEASED_FALSIFIER_OPT_IN/u);
