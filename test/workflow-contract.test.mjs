@@ -75,7 +75,9 @@ test('ordinary CI is least-privilege Node 24 validation on pushes and pull reque
   assert.deepEqual(section(source, 'permissions').filter((line) => line.trim()), [
     '  contents: read'
   ]);
-  assert.match(source, /^    runs-on: ubuntu-24\.04$/mu);
+  assert.match(source, /^    runs-on: \$\{\{ matrix\.os \}\}$/mu);
+  assert.match(source, /^      fail-fast: false$/mu);
+  assert.match(source, /^        os: \[ubuntu-24\.04, windows-2025\]$/mu);
   assert.match(source, /^    timeout-minutes: 10$/mu);
   assert.match(source, /^          node-version: 24\.19\.0$/mu);
   assert.doesNotMatch(source, /CODEX_RELEASED_FALSIFIER_OPT_IN/u);

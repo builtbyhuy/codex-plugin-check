@@ -16,8 +16,12 @@ concurrency:
 
 jobs:
   test:
-    name: Node 24 tests
-    runs-on: ubuntu-24.04
+    name: Node 24 tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
     timeout-minutes: 10
     steps:
       - name: Check out source without credentials

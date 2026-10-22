@@ -109,7 +109,7 @@ test('action metadata uses Node 24 and declares the complete Marketplace surface
   }
   assert.match(source, /^  using: node24$/m);
   assert.match(source, /^  main: src\/action\.mjs$/m);
-  assert.match(source, /^branding:\n  icon: check-circle\n  color: blue$/m);
+  assert.match(source, /^branding:\r?\n  icon: check-circle\r?\n  color: blue\r?$/m);
 });
 
 test('action delegates all inputs and publishes multiline-safe receipt outputs', async (t) => {

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { once } from 'node:events';
+import { EventEmitter, once } from 'node:events';
+import { PassThrough } from 'node:stream';
 import test from 'node:test';
 
 test('initializes the app-server protocol before serving requests', async (t) => {
@@ -116,7 +117,44 @@ test('fatal protocol shutdown force-stops a stubborn child without close', async
   } finally {
     clearTimeout(guardTimer);
   }
-  assert.equal(client.child.signalCode, 'SIGKILL');
+  // Windows force-terminates a process for SIGTERM; it cannot install the POSIX handler.
+  assert.equal(client.child.signalCode, process.platform === 'win32' ? 'SIGTERM' : 'SIGKILL');
+});
+
+test('fatal shutdown escalates when the child does not close after SIGTERM', async (t) => {
+  const { AppServerClient } = await import('../src/app-server-client.mjs');
+  const child = new EventEmitter();
+  Object.assign(child, {
+    stdin: new PassThrough(),
+    stdout: new PassThrough(),
+    stderr: new PassThrough(),
+    exitCode: null,
+    signalCode: null
+  });
+  const signals = [];
+  child.kill = (signal) => {
+    signals.push(signal);
+    if (signal === 'SIGKILL') {
+      child.signalCode = signal;
+      setImmediate(() => child.emit('close', null, signal));
+    }
+    return true;
+  };
+  const client = new AppServerClient(child, 1_000);
+  t.after(() => client.close());
+  const request = client.request('plugin/read', {});
+  child.stdout.write('{invalid JSON}\n');
+  await assert.rejects(request, /malformed JSONL/i);
+  let guardTimer;
+  const guard = new Promise((_, reject) => {
+    guardTimer = setTimeout(() => reject(new Error('test guard: no forced shutdown')), 500);
+  });
+  try {
+    await Promise.race([client.close(), guard]);
+  } finally {
+    clearTimeout(guardTimer);
+  }
+  assert.deepEqual(signals, ['SIGTERM', 'SIGKILL']);
 });
 
 test('rejects a JSON null message without throwing uncaught', async (t) => {
@@ -126,7 +164,7 @@ test('rejects a JSON null message without throwing uncaught', async (t) => {
     args: ['test/fixtures/fake-app-server.mjs', 'json-null'],
     cwd: process.cwd(),
     env: process.env,
-    timeoutMs: 250
+    timeoutMs: 1_000
   });
   t.after(() => client.close());
 
@@ -144,7 +182,7 @@ test('rejects a JSON array message without timing out', async (t) => {
     args: ['test/fixtures/fake-app-server.mjs', 'json-array'],
     cwd: process.cwd(),
     env: process.env,
-    timeoutMs: 250
+    timeoutMs: 1_000
   });
   t.after(() => client.close());
 
@@ -162,7 +200,7 @@ test('rejects a null JSON-RPC error without throwing uncaught', async (t) => {
     args: ['test/fixtures/fake-app-server.mjs', 'null-error'],
     cwd: process.cwd(),
     env: process.env,
-    timeoutMs: 250
+    timeoutMs: 1_000
   });
   t.after(() => client.close());
 
@@ -180,7 +218,7 @@ test('rejects malformed JSON-RPC error fields through the fatal path', async (t)
     args: ['test/fixtures/fake-app-server.mjs', 'invalid-error'],
     cwd: process.cwd(),
     env: process.env,
-    timeoutMs: 250
+    timeoutMs: 1_000
   });
   t.after(() => client.close());
 
@@ -198,7 +236,7 @@ test('rejects an unknown integer response ID immediately', async (t) => {
     args: ['test/fixtures/fake-app-server.mjs', 'unknown-id'],
     cwd: process.cwd(),
     env: process.env,
-    timeoutMs: 250
+    timeoutMs: 1_000
   });
   t.after(() => client.close());
 
@@ -216,7 +254,7 @@ test('rejects a non-integer response ID through the fatal path', async (t) => {
     args: ['test/fixtures/fake-app-server.mjs', 'invalid-id'],
     cwd: process.cwd(),
     env: process.env,
-    timeoutMs: 250
+    timeoutMs: 1_000
   });
   t.after(() => client.close());
 
@@ -234,11 +272,12 @@ test('rejects a request after its configured timeout', async (t) => {
     args: ['test/fixtures/fake-app-server.mjs', 'no-response'],
     cwd: process.cwd(),
     env: process.env,
-    timeoutMs: 250
+    timeoutMs: 1_000
   });
   t.after(() => client.close());
 
   await client.initialize();
+  client.timeoutMs = 250;
   let guardTimer;
   const guard = new Promise((_, reject) => {
     guardTimer = setTimeout(
@@ -275,23 +314,57 @@ test('rejects pending requests when the app-server exits prematurely', async (t)
   );
 });
 
-test('rejects a write race after the real child closes stdin', async (t) => {
+test('bounds failure after the real child closes stdin', async (t) => {
   const { AppServerClient } = await import('../src/app-server-client.mjs');
   const client = await AppServerClient.start({
     command: process.execPath,
     args: ['test/fixtures/fake-app-server.mjs', 'stdin-race'],
     cwd: process.cwd(),
     env: process.env,
-    timeoutMs: 250
+    timeoutMs: 1_000
   });
   t.after(() => client.close());
 
   await client.initialize();
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  // Wait for the fixture to close its read end instead of assuming a scheduling delay.
+  if (!Buffer.concat(client.stderrChunks).toString('utf8').includes('stdin-closed')) {
+    await once(client.child.stderr, 'data', { signal: AbortSignal.timeout(1_000) });
+  }
+  client.timeoutMs = 250;
   await assert.rejects(
-    client.request('plugin/read', {}),
-    /stdin write failed|exited prematurely/i
+    client.request('plugin/read', { payload: 'x'.repeat(1024 * 1024) }),
+    // Windows may buffer the write without a native pipe error; the deadline still fails closed.
+    process.platform === 'win32'
+      ? /stdin write failed|exited prematurely|timed out after 250 ms/i
+      : /stdin write failed|exited prematurely/i
   );
+});
+
+test('a stdin write callback error rejects requests and shuts down', async (t) => {
+  const { AppServerClient } = await import('../src/app-server-client.mjs');
+  const child = new EventEmitter();
+  Object.assign(child, {
+    stdin: new PassThrough(),
+    stdout: new PassThrough(),
+    stderr: new PassThrough(),
+    exitCode: null,
+    signalCode: null
+  });
+  child.stdin.write = (_value, callback) => {
+    queueMicrotask(() => callback(Object.assign(new Error('broken pipe'), { code: 'EPIPE' })));
+    return false;
+  };
+  child.kill = (signal) => {
+    child.signalCode = signal;
+    setImmediate(() => child.emit('close', null, signal));
+    return true;
+  };
+  const client = new AppServerClient(child, 1_000);
+  t.after(() => client.close());
+  await assert.rejects(client.request('plugin/read', {}), /stdin write failed: broken pipe/i);
+  await client.close();
+  assert.equal(client.pending.size, 0);
+  assert.equal(child.signalCode, 'SIGTERM');
 });
 
 test('rejects duplicate response IDs as a protocol failure', async (t) => {
@@ -301,7 +374,7 @@ test('rejects duplicate response IDs as a protocol failure', async (t) => {
     args: ['test/fixtures/fake-app-server.mjs', 'duplicate'],
     cwd: process.cwd(),
     env: process.env,
-    timeoutMs: 250
+    timeoutMs: 1_000
   });
   t.after(() => client.close());
 
@@ -323,7 +396,7 @@ test('rejects stderr larger than 64 KiB', async (t) => {
     args: ['test/fixtures/fake-app-server.mjs', 'stderr-overflow'],
     cwd: process.cwd(),
     env: process.env,
-    timeoutMs: 250
+    timeoutMs: 1_000
   });
   t.after(() => client.close());
 

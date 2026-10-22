@@ -386,8 +386,8 @@ test('environment accepts only exact released versions and a checkout-relative o
   };
   assert.deepEqual(publicFixtureOptionsFromEnvironment(env, '/checkout'), {
     architecture: process.arch,
-    outputBoundary: '/checkout',
-    outputRoot: '/checkout/artifacts/public-fixtures',
+    outputBoundary: path.resolve('/checkout'),
+    outputRoot: path.resolve('/checkout/artifacts/public-fixtures'),
     platform: process.platform,
     provenance: null
   });
@@ -777,7 +777,7 @@ test('evidence root symlinks are rejected before writes and outside state remain
   const outside = await temporaryDirectory(t, 'public-fixture-symlink-outside-');
   const sentinel = path.join(outside, 'sentinel.txt');
   await writeFile(sentinel, 'unchanged\n');
-  await symlink(outside, path.join(boundary, 'artifacts'), 'dir');
+  await symlink(outside, path.join(boundary, 'artifacts'), process.platform === 'win32' ? 'junction' : 'dir');
   let prepared = false;
 
   await assert.rejects(runPublicFixtureMatrix({
@@ -820,7 +820,7 @@ test('swapping the created evidence root for a symlink cannot write outside', as
       if (!swapped) {
         swapped = true;
         await rm(outputRoot, { recursive: true });
-        await symlink(outside, outputRoot, 'dir');
+        await symlink(outside, outputRoot, process.platform === 'win32' ? 'junction' : 'dir');
       }
       return { code: 0, receipt: publicReceipt(fixture, version) };
     },
@@ -914,7 +914,19 @@ test('tar parser validates before manual extraction and never preserves executab
   ]);
 
   const destination = await temporaryDirectory(t, 'public-fixture-extract-');
-  const checkoutRoot = await extractArchiveEntries(entries, destination, root);
+  let checkoutRoot;
+  try {
+    checkoutRoot = await extractArchiveEntries(entries, destination, root);
+  } catch (cause) {
+    if (process.platform !== 'win32' || cause.code !== 'EPERM' || cause.syscall !== 'symlink') {
+      throw cause;
+    }
+    // The production falsifier requires Linux. An unprivileged Windows host must
+    // fail closed when it cannot create the archive's file symlink.
+    checkoutRoot = path.join(destination, root);
+    await assert.rejects(lstat(path.join(checkoutRoot, 'license-link')), { code: 'ENOENT' });
+    t.diagnostic('Windows denied file symlink creation; extraction rejected without executing archive content');
+  }
   assert.equal(await readFile(path.join(checkoutRoot, 'LICENSE'), 'utf8'), 'MIT\n');
   const scriptMode = await lstat(path.join(checkoutRoot, 'run-me.sh'));
   assert.equal(scriptMode.mode & 0o111, 0);
@@ -973,7 +985,7 @@ test('tar parser resolves bounded PAX path metadata without exposing metadata en
 test('on-disk symlink audit rejects a lexical escape from the checkout', async (t) => {
   const checkout = await temporaryDirectory(t, 'public-fixture-checkout-');
   const outside = await temporaryDirectory(t, 'public-fixture-checkout-outside-');
-  await symlink(outside, path.join(checkout, 'escape'), 'dir');
+  await symlink(outside, path.join(checkout, 'escape'), process.platform === 'win32' ? 'junction' : 'dir');
   await assert.rejects(auditExtractedSymlinks(checkout), /symlink.*escape|escape.*symlink/i);
 });
 
@@ -1341,8 +1353,8 @@ test('entrypoint binds exact environment options and reports failures with exit 
   assert.equal(stderr, '');
   assert.deepEqual(observedOptions, {
     architecture: process.arch,
-    outputBoundary: '/checkout',
-    outputRoot: '/checkout/artifacts/public-fixtures',
+    outputBoundary: path.resolve('/checkout'),
+    outputRoot: path.resolve('/checkout/artifacts/public-fixtures'),
     platform: process.platform,
     provenance: null
   });

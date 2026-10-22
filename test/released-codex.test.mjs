@@ -188,8 +188,8 @@ test('falsifier accepts only a safe repo-relative deterministic evidence root', 
     falsifierOptionsFromEnvironment(environment, '/checkout'),
     {
       env: environment,
-      outputBoundary: '/checkout',
-      outputRoot: '/checkout/artifacts/released-codex'
+      outputBoundary: path.resolve('/checkout'),
+      outputRoot: path.resolve('/checkout/artifacts/released-codex')
     }
   );
   for (const unsafe of ['/tmp/evidence', '../evidence', 'artifacts/../../evidence']) {
@@ -210,7 +210,7 @@ test('environment evidence root rejects a symlink parent without changing outsid
   const sentinel = path.join(outsideRoot, 'outside-sentinel.txt');
   const sentinelContents = 'outside must remain unchanged\n';
   await writeFile(sentinel, sentinelContents, { mode: 0o600 });
-  await symlink(outsideRoot, path.join(checkoutRoot, 'artifacts'), 'dir');
+  await symlink(outsideRoot, path.join(checkoutRoot, 'artifacts'), process.platform === 'win32' ? 'junction' : 'dir');
   const options = falsifierOptionsFromEnvironment({
     ...EXACT_ENV,
     CODEX_FALSIFIER_OUTPUT_ROOT: 'artifacts/released-codex'
