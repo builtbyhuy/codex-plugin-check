@@ -12,6 +12,17 @@ on:
       - scripts/falsify-public-fixtures.mjs
       - src/**
       - test/public-fixtures.test.mjs
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/public-fixtures.yml
+      - .dockerignore
+      - Dockerfile
+      - package.json
+      - scripts/falsify-public-fixtures.mjs
+      - src/**
+      - test/public-fixtures.test.mjs
   workflow_dispatch:
 
 permissions:
@@ -42,14 +53,19 @@ jobs:
           node-version: 24.19.0
 
       - name: Falsify exact public plugin fixtures
-        run: npm run falsify:public
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run falsify:public 2>&1 | tee "$RUNNER_TEMP/public-fixture-run.log"
 
       - name: Upload public-fixture evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: public-fixture-evidence-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/public-fixtures
+          path: |
+            artifacts/public-fixtures
+            ${{ runner.temp }}/public-fixture-run.log
           if-no-files-found: error
           retention-days: 90
           compression-level: 9

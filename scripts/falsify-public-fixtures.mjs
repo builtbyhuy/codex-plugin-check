@@ -179,18 +179,18 @@ const FIXED_FIXTURES = [
     expectedKinds: ['skill']
   },
   {
-    evidenceId: 'roadrunner-admin',
-    repository: 'roadrunner-tuff/roadrunner-admin-plugin',
-    repositoryUrl: 'https://github.com/roadrunner-tuff/roadrunner-admin-plugin',
-    commit: '8e130c07656c8f9db8bf5431332c9aed60a4b133',
-    archiveUrl: 'https://codeload.github.com/roadrunner-tuff/roadrunner-admin-plugin/tar.gz/8e130c07656c8f9db8bf5431332c9aed60a4b133',
-    archiveRoot: 'roadrunner-admin-plugin-8e130c07656c8f9db8bf5431332c9aed60a4b133',
+    evidenceId: 'stripe',
+    repository: 'stripe/ai',
+    repositoryUrl: 'https://github.com/stripe/ai',
+    commit: '89ffbee06b3782ed15d77ffd6cbc5620ad26d3bd',
+    archiveUrl: 'https://codeload.github.com/stripe/ai/tar.gz/89ffbee06b3782ed15d77ffd6cbc5620ad26d3bd',
+    archiveRoot: 'ai-89ffbee06b3782ed15d77ffd6cbc5620ad26d3bd',
     classification: 'DIRECT',
     adapterId: 'none',
     marketplaceRoot: '.',
-    plugin: 'roadrunner-admin',
-    marketplace: 'roadrunner',
-    license: 'Apache-2.0',
+    plugin: 'stripe',
+    marketplace: 'stripe',
+    license: 'MIT',
     licensePaths: ['LICENSE'],
     expectedKinds: ['skill', 'mcp']
   }
@@ -339,16 +339,22 @@ const FIXED_PLUGIN_CONTRACTS = {
       ['skill', 'example-minimal:summarizing-git-log', 'plugin/read + skills/list']
     ])
   },
-  'roadrunner-admin': {
-    marketplaceManifestPath: '.agents/plugins/marketplace.json',
-    pluginRoot: 'plugins/roadrunner-admin',
-    pluginManifestPath: '.codex-plugin/plugin.json',
-    pluginVersion: '0.1.0',
-    expectedCheckoutSha256: '33eaa8e5aef5449d496771317d1f40205dabf06fa6d6041e1e142e61e651f5d1',
-    expectedMarketplaceSha256: '33eaa8e5aef5449d496771317d1f40205dabf06fa6d6041e1e142e61e651f5d1',
+  stripe: {
+    marketplaceManifestPath: '.claude-plugin/marketplace.json',
+    pluginRoot: 'providers/claude/plugin',
+    pluginManifestPath: '.claude-plugin/plugin.json',
+    pluginVersion: '0.5.0',
+    expectedCheckoutSha256: 'd52ef88f27a0be1a4e595644881ea9ef3fac72e102123cfa1373732d19658d90',
+    expectedMarketplaceSha256: 'd52ef88f27a0be1a4e595644881ea9ef3fac72e102123cfa1373732d19658d90',
     expectedCapabilities: fixedCapabilities([
-      ['mcp', 'roadrunner-admin', 'plugin/read'],
-      ['skill', 'roadrunner-admin:roadrunner-admin', 'plugin/read + skills/list']
+      ['mcp', 'stripe', 'plugin/read'],
+      ['skill', 'stripe:connect-recommend', 'plugin/read + skills/list'],
+      ['skill', 'stripe:stripe-apps', 'plugin/read + skills/list'],
+      ['skill', 'stripe:stripe-best-practices', 'plugin/read + skills/list'],
+      ['skill', 'stripe:stripe-directory', 'plugin/read + skills/list'],
+      ['skill', 'stripe:stripe-docs', 'plugin/read + skills/list'],
+      ['skill', 'stripe:stripe-projects', 'plugin/read + skills/list'],
+      ['skill', 'stripe:upgrade-stripe', 'plugin/read + skills/list']
     ])
   }
 };
@@ -411,17 +417,20 @@ function githubProvenanceFromEnvironment(env) {
     typeof env[key] === 'string' && env[key] !== ''
   ));
   if (!hasGithubValue) return null;
+  const isMainRun = ['push', 'workflow_dispatch'].includes(env.GITHUB_EVENT_NAME) &&
+    env.GITHUB_REF === 'refs/heads/main';
+  const isPullRequestRun = env.GITHUB_EVENT_NAME === 'pull_request' &&
+    /^refs\/pull\/[1-9]\d*\/merge$/.test(env.GITHUB_REF ?? '');
   if (
     env.GITHUB_ACTIONS !== 'true' ||
-    !['push', 'workflow_dispatch'].includes(env.GITHUB_EVENT_NAME) ||
-    env.GITHUB_REF !== 'refs/heads/main' ||
+    (!isMainRun && !isPullRequestRun) ||
     env.GITHUB_REPOSITORY !== 'builtbyhuy/codex-plugin-check' ||
     !/^[1-9]\d*$/.test(env.GITHUB_RUN_ATTEMPT ?? '') ||
     !/^[1-9]\d*$/.test(env.GITHUB_RUN_ID ?? '') ||
     env.GITHUB_SERVER_URL !== 'https://github.com' ||
     !COMMIT_SHA.test(env.GITHUB_SHA ?? '')
   ) {
-    throw new Error('GitHub Actions provenance was incomplete or outside trusted main');
+    throw new Error('GitHub Actions provenance was incomplete or outside main / pull-request checks');
   }
   const runUrl = `${env.GITHUB_SERVER_URL}/${env.GITHUB_REPOSITORY}/actions/runs/${
     env.GITHUB_RUN_ID
@@ -597,7 +606,10 @@ export async function fetchPublicArchive(fixture, dependencies = {}) {
       signal: controller.signal
     });
     if (!response?.ok || response.status !== 200) {
-      throw new Error(`Public archive fetch failed with HTTP ${response?.status ?? 'unknown'}`);
+      throw new Error(
+        `Public archive fetch failed for ${fixture.repository}@${fixture.commit} ` +
+        `with HTTP ${response?.status ?? 'unknown'}`
+      );
     }
     if (response.url !== fixture.archiveUrl) {
       throw new Error('Public archive response URL did not match the exact codeload identity');

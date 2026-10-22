@@ -149,10 +149,10 @@ test('strict workflow lets the falsifier exclusively create its evidence directo
   );
 });
 
-test('public fixture matrix runs only from trusted main pushes or manual dispatch', async () => {
+test('public fixture matrix checks main pushes and pull requests with read-only permissions', async () => {
   const source = await workflow('public-fixtures.yml');
 
-  assert.deepEqual(mappingKeys(section(source, 'on'), 2), ['push', 'workflow_dispatch']);
+  assert.deepEqual(mappingKeys(section(source, 'on'), 2), ['push', 'pull_request', 'workflow_dispatch']);
   assert.deepEqual(section(source, 'permissions').filter((line) => line.trim()), [
     '  contents: read'
   ]);
@@ -165,16 +165,21 @@ test('public fixture matrix runs only from trusted main pushes or manual dispatc
     source,
     /^      CODEX_PUBLIC_FIXTURE_OUTPUT_ROOT: artifacts\/public-fixtures$/mu
   );
-  assert.doesNotMatch(source, /^\s*pull_request:/mu);
+  assert.deepEqual(section(source, 'pull_request', 2).slice(0, 2), [
+    '    branches:', '      - main'
+  ]);
   assert.doesNotMatch(source, /^\s*run: npm test$/mu);
-  assert.equal(source.match(/^\s*run: npm run falsify:public$/gmu)?.length, 1);
+  assert.equal(source.match(/^\s*npm run falsify:public 2>&1 \| tee "\$RUNNER_TEMP\/public-fixture-run\.log"$/gmu)?.length, 1);
+  assert.match(source, /^          set -o pipefail$/mu);
   assert.equal(
     scalar(stepUsing(source, CHECKOUT).source, 'persist-credentials', 10),
     'false'
   );
   assert.ok(stepUsing(source, SETUP_NODE));
   const upload = stepUsing(source, UPLOAD);
-  assert.equal(scalar(upload.source, 'path', 10), 'artifacts/public-fixtures');
+  assert.equal(scalar(upload.source, 'path', 10), '|');
+  assert.ok(upload.source.includes('            artifacts/public-fixtures'));
+  assert.ok(upload.source.includes('            ${{ runner.temp }}/public-fixture-run.log'));
   assert.equal(scalar(upload.source, 'if-no-files-found', 10), 'error');
   assert.equal(scalar(upload.source, 'retention-days', 10), '90');
   assert.ok(upload.source.includes('        if: always()'));
@@ -188,7 +193,7 @@ test('public fixture runner exclusively creates its evidence directory', async (
   const source = await workflow('public-fixtures.yml');
   const workflowSteps = steps(source);
   const runnerIndex = workflowSteps.findIndex((step) => (
-    step.source.includes('        run: npm run falsify:public')
+    step.source.includes('          npm run falsify:public 2>&1 | tee "$RUNNER_TEMP/public-fixture-run.log"')
   ));
 
   assert.notEqual(runnerIndex, -1);
