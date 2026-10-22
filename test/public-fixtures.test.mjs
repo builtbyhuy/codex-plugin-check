@@ -52,7 +52,7 @@ const FIXED_IDENTITIES = [
   ['ujjwalredd/sarathi', '08a51154a2f30af3eb4f6acb11115b9db912c5f8', 'DIRECT', 'none'],
   ['sofus-nl/cc-plugin-codex', 'cc5123f7fa18db9c38f838a9b70119e5a0a6847c', 'DIRECT', 'none'],
   ['RMI/speedy-skills', 'e983f800056a12b63fd60d5148538f98aaafe643', 'DIRECT', 'none'],
-  ['roadrunner-tuff/roadrunner-admin-plugin', '8e130c07656c8f9db8bf5431332c9aed60a4b133', 'DIRECT', 'none']
+  ['stripe/ai', '89ffbee06b3782ed15d77ffd6cbc5620ad26d3bd', 'DIRECT', 'none']
 ];
 
 const OH_MY_CASSETTE_MARKETPLACE = `{
@@ -95,7 +95,7 @@ const FIXED_DETAILS = [
     ['skill', 'hook']
   ],
   ['speedy-skills', '.', 'example-minimal', 'speedy-skills', ['LICENSE'], ['skill']],
-  ['roadrunner-admin', '.', 'roadrunner-admin', 'roadrunner', ['LICENSE'], ['skill', 'mcp']]
+  ['stripe', '.', 'stripe', 'stripe', ['LICENSE'], ['skill', 'mcp']]
 ];
 
 const FIXED_PLUGIN_CONTRACTS = [
@@ -211,13 +211,19 @@ const FIXED_PLUGIN_CONTRACTS = [
     [['skill', 'example-minimal:summarizing-git-log', 'plugin/read + skills/list']]
   ],
   [
-    'roadrunner-admin', '.agents/plugins/marketplace.json', 'plugins/roadrunner-admin',
-    '.codex-plugin/plugin.json', '0.1.0',
-    '33eaa8e5aef5449d496771317d1f40205dabf06fa6d6041e1e142e61e651f5d1',
-    '33eaa8e5aef5449d496771317d1f40205dabf06fa6d6041e1e142e61e651f5d1',
+    'stripe', '.claude-plugin/marketplace.json', 'providers/claude/plugin',
+    '.claude-plugin/plugin.json', '0.5.0',
+    'd52ef88f27a0be1a4e595644881ea9ef3fac72e102123cfa1373732d19658d90',
+    'd52ef88f27a0be1a4e595644881ea9ef3fac72e102123cfa1373732d19658d90',
     [
-      ['mcp', 'roadrunner-admin', 'plugin/read'],
-      ['skill', 'roadrunner-admin:roadrunner-admin', 'plugin/read + skills/list']
+      ['mcp', 'stripe', 'plugin/read'],
+      ['skill', 'stripe:connect-recommend', 'plugin/read + skills/list'],
+      ['skill', 'stripe:stripe-apps', 'plugin/read + skills/list'],
+      ['skill', 'stripe:stripe-best-practices', 'plugin/read + skills/list'],
+      ['skill', 'stripe:stripe-directory', 'plugin/read + skills/list'],
+      ['skill', 'stripe:stripe-docs', 'plugin/read + skills/list'],
+      ['skill', 'stripe:stripe-projects', 'plugin/read + skills/list'],
+      ['skill', 'stripe:upgrade-stripe', 'plugin/read + skills/list']
     ]
   ]
 ];
@@ -415,6 +421,17 @@ test('environment accepts only exact released versions and a checkout-relative o
     artifactName: 'public-fixture-evidence-31379758041-2'
   });
 
+  const pullRequest = {
+    ...github,
+    GITHUB_EVENT_NAME: 'pull_request',
+    GITHUB_REF: 'refs/pull/10/merge'
+  };
+  assert.deepEqual(publicFixtureOptionsFromEnvironment(pullRequest, '/checkout').provenance, {
+    ...publicFixtureOptionsFromEnvironment(github, '/checkout').provenance,
+    event: 'pull_request',
+    ref: 'refs/pull/10/merge'
+  });
+
   for (const invalid of [
     { ...env, CODEX_CURRENT_VERSION: 'latest' },
     { ...env, CODEX_PRIOR_VERSION: '0.146.0' },
@@ -422,6 +439,9 @@ test('environment accepts only exact released versions and a checkout-relative o
     { ...env, CODEX_PUBLIC_FIXTURE_OUTPUT_ROOT: '../evidence' },
     { ...env, CODEX_PUBLIC_FIXTURE_OUTPUT_ROOT: 'artifacts/../../evidence' },
     { ...github, GITHUB_REF: 'refs/heads/feature' },
+    { ...pullRequest, GITHUB_REF: 'refs/heads/main' },
+    { ...pullRequest, GITHUB_REF: 'refs/pull/10/head' },
+    { ...pullRequest, GITHUB_EVENT_NAME: 'pull_request_target' },
     { ...github, GITHUB_RUN_ID: 'not-a-run' },
     { ...github, GITHUB_SHA: 'short' },
     { ...github, GITHUB_ACTIONS: undefined }
@@ -829,6 +849,24 @@ test('swapping the created evidence root for a symlink cannot write outside', as
 
   assert.equal(await readFile(sentinel, 'utf8'), 'unchanged\n');
   assert.deepEqual(await readdir(outside), ['sentinel.txt']);
+});
+
+test('archive failure names the exact pinned fixture without accepting a replacement', async () => {
+  const fixture = PUBLIC_FIXTURES[9];
+  let calls = 0;
+  await assert.rejects(fetchPublicArchive(fixture, {
+    fetchImpl: async (url) => {
+      calls += 1;
+      assert.equal(url, fixture.archiveUrl);
+      return { ok: false, status: 404 };
+    }
+  }), (error) => {
+    assert.ok(error.message.includes(fixture.repository));
+    assert.ok(error.message.includes(fixture.commit));
+    assert.match(error.message, /HTTP 404/);
+    return true;
+  });
+  assert.equal(calls, 1);
 });
 
 test('archive fetch uses only exact credential-free codeload and enforces byte bounds', async () => {

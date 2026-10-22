@@ -93,7 +93,10 @@ the full contract.
 
 ## Inspect the engineering
 
-- [Public fixture matrix](docs/evidence/public-fixture-matrix.md): ten pinned
+- [Fixture maintenance, 22 October](docs/evidence/fixture-maintenance-2026-10-22.md):
+  why an unavailable upstream fixture was explicitly replaced, with the new
+  source pin, license, hashes and diagnostic contract.
+- [Historical public fixture matrix](docs/evidence/public-fixture-matrix.md): ten pinned
   plugin fixtures across Codex 0.146.1 and 0.147.0, with retained receipts and
   input identities. Nine fixtures were direct; one used a documented adapter.
 - [Released-binary falsifier](docs/evidence/technical-falsifier.md): positive and
